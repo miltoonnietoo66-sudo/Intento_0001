@@ -3,7 +3,7 @@ import streamlit as st
 # Configuración inicial de la página
 st.set_page_config(page_title="Sistema INER", layout="wide")
 
-# CSS personalizado: Fondo blanco, texto rojo para botones y bordes estilo matriz
+# CSS personalizado: Fondo blanco, texto rojo para botones y bordes/etiquetas en azul
 st.markdown(
     """
     <style>
@@ -18,12 +18,12 @@ st.markdown(
         padding-top: 1.5rem;
     }
 
-    /* Estilo para los botones (Letras en rojo, bordes visibles) */
+    /* Estilo para los botones (Letras en rojo, bordes azules) */
     div[data-testid="stButton"] > button {
-        color: #D90429 !important;
+        color: #E63946 !important; /* Rojo */
         font-weight: bold !important;
         background-color: #FFFFFF !important;
-        border: 1px solid #000000 !important;
+        border: 2px solid #0077B6 !important; /* Azul de la imagen */
         border-radius: 4px !important;
         width: 100% !important;
         height: 2.8rem !important;
@@ -31,15 +31,15 @@ st.markdown(
     }
 
     div[data-testid="stButton"] > button:hover {
-        background-color: #FFF0F2 !important;
-        border-color: #D90429 !important;
+        background-color: #F0F8FF !important;
+        border-color: #023E8A !important;
     }
 
-    /* Estilo para etiquetas estáticas de la matriz */
+    /* Estilo para etiquetas estáticas de la matriz (Texto y bordes azules) */
     .label-box {
-        border: 1px solid #000000;
+        border: 2px solid #0077B6; /* Azul de la imagen */
         background-color: #FFFFFF;
-        color: #000000;
+        color: #0077B6; /* Azul de la imagen */
         font-weight: bold;
         text-align: center;
         padding: 0.5rem;
@@ -48,6 +48,7 @@ st.markdown(
         display: flex;
         align-items: center;
         justify-content: center;
+        font-size: 1rem;
     }
     </style>
     """,
@@ -79,19 +80,18 @@ with col1_3:
 st.write("")  # Espaciador vertical
 
 # ==========================================
-# FILA 2: LABORATORIOS | S02 | S03 | S04 | S06 | S07 | S08 | S10 | 🏠
+# FILA 2: LABORATORIOS | 502 | 503 | 504 | 506 | 507 | 508 | 510 | 🏠
 # ==========================================
-col2_labels = ["LABORATORIOS", "S02", "S03", "S04", "S06", "S07", "S08", "S10", "🏠"]
 col2_widths = [2, 1, 1, 1, 1, 1, 1, 1, 1]
 
 cols_f2 = st.columns(col2_widths)
 
-# Columna 'LABORATORIOS' como etiqueta estática
+# Columna 'LABORATORIOS' como etiqueta estática azul
 with cols_f2[0]:
     st.markdown('<div class="label-box">LABORATORIOS</div>', unsafe_allow_html=True)
 
-# Botones S02 a S10 y botón de inicio
-labs = ["S02", "S03", "S04", "S06", "S07", "S08", "S10", "INICIO"]
+# Botones de laboratorios con número "5" en lugar de "S"
+labs = ["502", "503", "504", "506", "507", "508", "510", "INICIO"]
 
 for idx, lab in enumerate(labs, start=1):
     with cols_f2[idx]:
@@ -104,7 +104,7 @@ for idx, lab in enumerate(labs, start=1):
                 st.session_state["lab_seleccionado"] = lab
 
 # ==========================================
-# FILA 3: USO DE EQUIPOS | CONDICIONES (Desplegable)
+# FILA 3: USO DE EQUIPOS | CONDICIONES (Se despliega tras pulsar un laboratorio)
 # ==========================================
 if st.session_state["lab_seleccionado"] is not None:
     st.write("")
