@@ -1,6 +1,6 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import pandas as pd
-import pytz
 import streamlit as st
 
 # Configuración inicial de la página
@@ -120,8 +120,8 @@ for eq in equipos_list:
     if f"estado_{eq}" not in st.session_state:
         st.session_state[f"estado_{eq}"] = "INACTIVO"
 
-# Función para obtener hora oficial CDMX
-tz_cdmx = pytz.timezone("America/Mexico_City")
+# Función nativa para obtener hora oficial CDMX
+tz_cdmx = ZoneInfo("America/Mexico_City")
 
 
 def obtener_hora_cdmx():
