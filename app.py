@@ -1,16 +1,11 @@
-import io
 from datetime import datetime
 import pandas as pd
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
 import streamlit as st
 
 # Configuración inicial de la página
 st.set_page_config(page_title="Sistema INER", layout="wide")
 
-# CSS personalizado para corregir la Fila 1 y los estados de color dinámicos
+# CSS personalizado para la interfaz
 st.markdown(
     """
     <style>
@@ -20,11 +15,13 @@ st.markdown(
         color: #000000;
     }
 
+    /* Padding superior para que la Fila 1 baje y se aprecie completa */
     .block-container {
-        padding-top: 1rem;
+        padding-top: 3.5rem !important;
+        padding-bottom: 2rem !important;
     }
 
-    /* Estilo Fila 1 y Etiquetas del Menú (Bordes azulaos visibles) */
+    /* Estilo Fila 1 y Etiquetas del Menú */
     .label-box {
         border: 2px solid #0077B6;
         background-color: #FFFFFF;
@@ -40,7 +37,7 @@ st.markdown(
         font-size: 1rem;
     }
 
-    /* Reloj y Fecha (Fila 1) */
+    /* Reloj y Fecha */
     .reloj-box {
         border: 2px solid #0077B6;
         background-color: #F0F8FF;
@@ -91,7 +88,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Inicialización de Estados de Sesión (Base de datos local)
+# Inicialización de Estados de Sesión
 if "lab_seleccionado" not in st.session_state:
     st.session_state["lab_seleccionado"] = None
 
@@ -101,7 +98,6 @@ if "sub_seccion" not in st.session_state:
 if "historial_registros" not in st.session_state:
     st.session_state["historial_registros"] = []
 
-# Estado individual para cada equipo (Azul base / Verde cuando se inicia / Rojo cuando finaliza)
 equipos_list = ["GABS-3", "CENT-10", "MICR-1"]
 for eq in equipos_list:
     if f"estado_{eq}" not in st.session_state:
@@ -150,6 +146,7 @@ for idx, lab in enumerate(labs, start=1):
                 st.session_state["sub_seccion"] = None
             else:
                 st.session_state["lab_seleccionado"] = lab
+                st.session_state["sub_seccion"] = None  # Resetea la subsección al cambiar de laboratorio
 
 # ==========================================
 # FILA 3: USO DE EQUIPOS | CONDICIONES
@@ -173,145 +170,109 @@ if st.session_state["lab_seleccionado"] is not None:
     st.markdown("---")
 
     # ==========================================
-    # VISTA DE EQUIPOS PARA EL LAB 503
+    # DESPLIEGUE SOLO SI SE PULSA "USO DE EQUIPOS"
     # ==========================================
-    if lab_actual == "503":
-        st.subheader("Control de Equipos — Laboratorio 503")
+    if st.session_state["sub_seccion"] == "USO DE EQUIPOS":
+        if lab_actual == "503":
+            st.subheader("Control de Equipos — Laboratorio 503")
 
-        col_inicio, col_linea, col_final = st.columns([4, 0.2, 4])
+            col_inicio, col_linea, col_final = st.columns([4, 0.2, 4])
 
-        # COLUMNA INICIO
-        with col_inicio:
-            st.markdown(
-                '<div class="section-header-inicio">INICIO</div>',
-                unsafe_allow_html=True,
-            )
-
-            for eq in equipos_list:
-                estado_actual = st.session_state[f"estado_{eq}"]
-
-                # Estilo dinámico: Pasa a verde al pulsar INICIO
-                if estado_actual == "EN_USO":
-                    btn_type = "primary"
-                    lbl_btn = f"🟢 {eq} (EN CURSO)"
-                else:
-                    btn_type = "secondary"
-                    lbl_btn = f"🔵 {eq}"
-
-                if st.button(
-                    lbl_btn, key=f"btn_inc_{eq}", type=btn_type
-                ):
-                    timestamp_inicio = datetime.now().strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                    st.session_state[f"estado_{eq}"] = "EN_USO"
-                    st.session_state[f"inicio_{eq}"] = timestamp_inicio
-
-                    st.session_state["historial_registros"].append(
-                        {
-                            "Laboratorio": "503",
-                            "Equipo": eq,
-                            "Acción": "INICIO",
-                            "FechaHora": timestamp_inicio,
-                        }
-                    )
-                    st.toast(f"Inicio registrado para {eq} a las {timestamp_inicio}")
-                    st.rerun()
-
-        # LÍNEA DIVISORA
-        with col_linea:
-            st.markdown(
-                "<div style='border-left: 2px solid #0077B6; height: 300px; margin: 0 auto;'></div>",
-                unsafe_allow_html=True,
-            )
-
-        # COLUMNA FINAL
-        with col_final:
-            st.markdown(
-                '<div class="section-header-final">FINAL</div>',
-                unsafe_allow_html=True,
-            )
-
-            for eq in equipos_list:
-                estado_actual = st.session_state[f"estado_{eq}"]
-
-                # Estilo dinámico: Pasa a rojo al pulsar FINAL
-                if estado_actual == "FINALIZADO":
-                    lbl_btn_fin = f"🔴 {eq} (CONCLUIDO)"
-                else:
-                    lbl_btn_fin = f"🔵 {eq}"
-
-                if st.button(
-                    lbl_btn_fin, key=f"btn_fin_{eq}"
-                ):
-                    timestamp_fin = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    st.session_state[f"estado_{eq}"] = "FINALIZADO"
-
-                    st.session_state["historial_registros"].append(
-                        {
-                            "Laboratorio": "503",
-                            "Equipo": eq,
-                            "Acción": "FINAL",
-                            "FechaHora": timestamp_fin,
-                        }
-                    )
-                    st.toast(f"Finalización registrada para {eq} a las {timestamp_fin}")
-                    st.rerun()
-
-        # ==========================================
-        # BASE DE DATOS Y GENERACIÓN DE PDF
-        # ==========================================
-        st.markdown("---")
-        st.subheader("📋 Registro de Marcas de Tiempo")
-
-        if st.session_state["historial_registros"]:
-            df = pd.DataFrame(st.session_state["historial_registros"])
-            st.dataframe(df, use_container_width=True)
-
-            # Función para construir el reporte PDF dinámico
-            def generar_pdf(dataframe):
-                buffer = io.BytesIO()
-                doc = SimpleDocTemplate(buffer, pagesize=letter)
-                elements = []
-
-                styles = getSampleStyleSheet()
-                title = Paragraph(
-                    "<b>Reporte de Uso de Equipos - Laboratorio 503</b>",
-                    styles["Title"],
+            # COLUMNA INICIO
+            with col_inicio:
+                st.markdown(
+                    '<div class="section-header-inicio">INICIO</div>',
+                    unsafe_allow_html=True,
                 )
-                elements.append(title)
 
-                data = [list(dataframe.columns)] + dataframe.values.tolist()
-                table = Table(data)
-                table.setStyle(
-                    TableStyle(
-                        [
-                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0077B6")),
-                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-                            ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F0F8FF")),
-                            ("GRID", (0, 0), (-1, -1), 1, colors.HexColor("#0077B6")),
-                        ]
-                    )
+                for eq in equipos_list:
+                    estado_actual = st.session_state[f"estado_{eq}"]
+
+                    if estado_actual == "EN_USO":
+                        lbl_btn = f"🟢 {eq} (EN CURSO)"
+                    else:
+                        lbl_btn = f"🔵 {eq}"
+
+                    if st.button(lbl_btn, key=f"btn_inc_{eq}"):
+                        timestamp_inicio = datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+                        st.session_state[f"estado_{eq}"] = "EN_USO"
+
+                        st.session_state["historial_registros"].append(
+                            {
+                                "Laboratorio": "503",
+                                "Equipo": eq,
+                                "Acción": "INICIO",
+                                "FechaHora": timestamp_inicio,
+                            }
+                        )
+                        st.toast(f"Inicio registrado para {eq} a las {timestamp_inicio}")
+                        st.rerun()
+
+            # LÍNEA DIVISORA
+            with col_linea:
+                st.markdown(
+                    "<div style='border-left: 2px solid #0077B6; height: 300px; margin: 0 auto;'></div>",
+                    unsafe_allow_html=True,
                 )
-                elements.append(table)
-                doc.build(elements)
-                buffer.seek(0)
-                return buffer
 
-            pdf_data = generar_pdf(df)
+            # COLUMNA FINAL
+            with col_final:
+                st.markdown(
+                    '<div class="section-header-final">FINAL</div>',
+                    unsafe_allow_html=True,
+                )
 
-            st.download_button(
-                label="📄 Descargar Bitácora en PDF",
-                data=pdf_data,
-                file_name=f"Bitacora_Equipos_503_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                mime="application/pdf",
-            )
+                for eq in equipos_list:
+                    estado_actual = st.session_state[f"estado_{eq}"]
+
+                    if estado_actual == "FINALIZADO":
+                        lbl_btn_fin = f"🔴 {eq} (CONCLUIDO)"
+                    else:
+                        lbl_btn_fin = f"🔵 {eq}"
+
+                    if st.button(lbl_btn_fin, key=f"btn_fin_{eq}"):
+                        timestamp_fin = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        st.session_state[f"estado_{eq}"] = "FINALIZADO"
+
+                        st.session_state["historial_registros"].append(
+                            {
+                                "Laboratorio": "503",
+                                "Equipo": eq,
+                                "Acción": "FINAL",
+                                "FechaHora": timestamp_fin,
+                            }
+                        )
+                        st.toast(f"Finalización registrada para {eq} a las {timestamp_fin}")
+                        st.rerun()
+
+            # BASE DE DATOS Y EXPORTACIÓN
+            st.markdown("---")
+            st.subheader("📋 Registro de Marcas de Tiempo")
+
+            if st.session_state["historial_registros"]:
+                df = pd.DataFrame(st.session_state["historial_registros"])
+                st.dataframe(df, use_container_width=True)
+
+                csv_data = df.to_csv(index=False).encode("utf-8")
+
+                st.download_button(
+                    label="📊 Descargar Bitácora (CSV / Excel)",
+                    data=csv_data,
+                    file_name=f"Bitacora_Equipos_503_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.info("Aún no se han registrado pulsos de inicio o final.")
+
         else:
-            st.info("Aún no se han registrado pulsos de inicio o final.")
+            st.subheader(f"Laboratorio {lab_actual}")
+            st.caption("Aún no hay equipos configurados para este laboratorio.")
+
+    elif st.session_state["sub_seccion"] == "CONDICIONES":
+        st.subheader(f"Condiciones Ambientales — Laboratorio {lab_actual}")
+        st.info("Módulo de monitoreo de condiciones (Temperatura, Humedad, etc.)")
 
     else:
-        st.subheader(f"Laboratorio {lab_actual}")
-        st.caption("Selecciona una opción en la Fila 3 para desplegar información.")
+        st.caption("👈 Haz clic en 'USO DE EQUIPOS' o 'CONDICIONES' para ver la información.")
