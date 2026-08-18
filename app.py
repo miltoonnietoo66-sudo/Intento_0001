@@ -1,27 +1,45 @@
 from datetime import datetime
 import pandas as pd
+import pytz
 import streamlit as st
 
 # Configuración inicial de la página
 st.set_page_config(page_title="Sistema INER", layout="wide")
 
-# CSS personalizado para la interfaz
+# CSS Personalizado: Marca de agua del INER, márgenes y estilos de botones
 st.markdown(
     """
     <style>
-    /* Fondo general blanco */
+    /* Fondo con marca de agua (Escudo INER) */
     .stApp {
         background-color: #FFFFFF;
-        color: #000000;
+        background-image: url('https://www.gob.mx/cms/uploads/action_program/main_image/26915/iner.jpg');
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+        background-position: center;
+        background-size: 450px;
+        position: relative;
     }
 
-    /* Padding superior para que la Fila 1 baje y se aprecie completa */
+    /* Superposición translúcida blanca para asegurar contraste de texto */
+    .stApp::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.88);
+        z-index: -1;
+    }
+
+    /* Padding superior para evitar recorte de la Fila 1 */
     .block-container {
         padding-top: 3.5rem !important;
         padding-bottom: 2rem !important;
     }
 
-    /* Estilo Fila 1 y Etiquetas del Menú */
+    /* Estilo para etiquetas estáticas del menú */
     .label-box {
         border: 2px solid #0077B6;
         background-color: #FFFFFF;
@@ -37,14 +55,13 @@ st.markdown(
         font-size: 1rem;
     }
 
-    /* Reloj y Fecha */
+    /* Estilo del contenedor del Reloj CDMX */
     .reloj-box {
         border: 2px solid #0077B6;
         background-color: #F0F8FF;
         color: #0077B6;
         font-weight: bold;
         text-align: center;
-        padding: 0.4rem;
         border-radius: 4px;
         height: 2.8rem;
         display: flex;
@@ -53,7 +70,7 @@ st.markdown(
         font-size: 0.95rem;
     }
 
-    /* Botones de Menú Fila 2 */
+    /* Estilo de los botones del menú */
     div[data-testid="stButton"] > button {
         color: #E63946 !important;
         font-weight: bold !important;
@@ -68,7 +85,7 @@ st.markdown(
         background-color: #F0F8FF !important;
     }
 
-    /* Títulos de Secciones INICIO y FINAL */
+    /* ENCABEZADOS INICIO / FINAL */
     .section-header-inicio {
         color: #2A9D8F;
         font-weight: bold;
@@ -103,8 +120,16 @@ for eq in equipos_list:
     if f"estado_{eq}" not in st.session_state:
         st.session_state[f"estado_{eq}"] = "INACTIVO"
 
+# Función para obtener hora oficial CDMX
+tz_cdmx = pytz.timezone("America/Mexico_City")
+
+
+def obtener_hora_cdmx():
+    return datetime.now(tz_cdmx).strftime("%Y-%m-%d %H:%M:%S")
+
+
 # ==========================================
-# FILA 1: INER | BUSCAR | RELOJ Y FECHA | LIT
+# FILA 1: INER | BUSCAR | RELOJ EN VIVO (CDMX) | LIT
 # ==========================================
 col1_1, col1_2, col1_3, col1_4 = st.columns([1.5, 1.5, 3.5, 1.5])
 
@@ -116,11 +141,29 @@ with col1_2:
         st.toast("Función de búsqueda activada")
 
 with col1_3:
-    ahora = datetime.now()
-    fecha_reloj = ahora.strftime("%d/%m/%Y — %H:%M:%S")
-    st.markdown(
-        f'<div class="reloj-box">🕒 {fecha_reloj}</div>', unsafe_allow_html=True
-    )
+    # Reloj en vivo dinámico con JavaScript en zona horaria Ciudad de México
+    reloj_html = """
+    <div class="reloj-box" id="reloj-cdmx">🕒 Cargando hora CDMX...</div>
+    <script>
+    function actualizarReloj() {
+        const opciones = {
+            timeZone: 'America/Mexico_City',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        };
+        const ahoraCDMX = new Intl.DateTimeFormat('es-MX', opciones).format(new Date());
+        document.getElementById('reloj-cdmx').innerHTML = '🕒 CDMX: ' + ahoraCDMX;
+    }
+    setInterval(actualizarReloj, 1000);
+    actualizarReloj();
+    </script>
+    """
+    st.components.v1.html(reloj_html, height=50)
 
 with col1_4:
     st.markdown('<div class="label-box">LIT</div>', unsafe_allow_html=True)
@@ -146,7 +189,7 @@ for idx, lab in enumerate(labs, start=1):
                 st.session_state["sub_seccion"] = None
             else:
                 st.session_state["lab_seleccionado"] = lab
-                st.session_state["sub_seccion"] = None  # Resetea la subsección al cambiar de laboratorio
+                st.session_state["sub_seccion"] = None
 
 # ==========================================
 # FILA 3: USO DE EQUIPOS | CONDICIONES
@@ -170,7 +213,7 @@ if st.session_state["lab_seleccionado"] is not None:
     st.markdown("---")
 
     # ==========================================
-    # DESPLIEGUE SOLO SI SE PULSA "USO DE EQUIPOS"
+    # DESPLIEGUE SOLO TRAS PRESIONAR "USO DE EQUIPOS"
     # ==========================================
     if st.session_state["sub_seccion"] == "USO DE EQUIPOS":
         if lab_actual == "503":
@@ -194,9 +237,7 @@ if st.session_state["lab_seleccionado"] is not None:
                         lbl_btn = f"🔵 {eq}"
 
                     if st.button(lbl_btn, key=f"btn_inc_{eq}"):
-                        timestamp_inicio = datetime.now().strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        )
+                        timestamp_inicio = obtener_hora_cdmx()
                         st.session_state[f"estado_{eq}"] = "EN_USO"
 
                         st.session_state["historial_registros"].append(
@@ -204,10 +245,12 @@ if st.session_state["lab_seleccionado"] is not None:
                                 "Laboratorio": "503",
                                 "Equipo": eq,
                                 "Acción": "INICIO",
-                                "FechaHora": timestamp_inicio,
+                                "FechaHora_CDMX": timestamp_inicio,
                             }
                         )
-                        st.toast(f"Inicio registrado para {eq} a las {timestamp_inicio}")
+                        st.toast(
+                            f"Inicio registrado para {eq} a las {timestamp_inicio} (CDMX)"
+                        )
                         st.rerun()
 
             # LÍNEA DIVISORA
@@ -233,7 +276,7 @@ if st.session_state["lab_seleccionado"] is not None:
                         lbl_btn_fin = f"🔵 {eq}"
 
                     if st.button(lbl_btn_fin, key=f"btn_fin_{eq}"):
-                        timestamp_fin = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        timestamp_fin = obtener_hora_cdmx()
                         st.session_state[f"estado_{eq}"] = "FINALIZADO"
 
                         st.session_state["historial_registros"].append(
@@ -241,15 +284,17 @@ if st.session_state["lab_seleccionado"] is not None:
                                 "Laboratorio": "503",
                                 "Equipo": eq,
                                 "Acción": "FINAL",
-                                "FechaHora": timestamp_fin,
+                                "FechaHora_CDMX": timestamp_fin,
                             }
                         )
-                        st.toast(f"Finalización registrada para {eq} a las {timestamp_fin}")
+                        st.toast(
+                            f"Finalización registrada para {eq} a las {timestamp_fin} (CDMX)"
+                        )
                         st.rerun()
 
             # BASE DE DATOS Y EXPORTACIÓN
             st.markdown("---")
-            st.subheader("📋 Registro de Marcas de Tiempo")
+            st.subheader("📋 Registro de Marcas de Tiempo (Hora CDMX)")
 
             if st.session_state["historial_registros"]:
                 df = pd.DataFrame(st.session_state["historial_registros"])
@@ -260,7 +305,7 @@ if st.session_state["lab_seleccionado"] is not None:
                 st.download_button(
                     label="📊 Descargar Bitácora (CSV / Excel)",
                     data=csv_data,
-                    file_name=f"Bitacora_Equipos_503_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    file_name=f"Bitacora_Equipos_503_{datetime.now(tz_cdmx).strftime('%Y%m%d_%H%M')}.csv",
                     mime="text/csv",
                 )
             else:
@@ -275,4 +320,6 @@ if st.session_state["lab_seleccionado"] is not None:
         st.info("Módulo de monitoreo de condiciones (Temperatura, Humedad, etc.)")
 
     else:
-        st.caption("👈 Haz clic en 'USO DE EQUIPOS' o 'CONDICIONES' para ver la información.")
+        st.caption(
+            "👈 Haz clic en 'USO DE EQUIPOS' o 'CONDICIONES' para ver la información."
+        )
