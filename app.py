@@ -9,7 +9,7 @@ st.set_page_config(page_title="Sistema INER", layout="wide")
 # Zona horaria oficial de Ciudad de México
 TZ_CDMX = ZoneInfo("America/Mexico_City")
 
-# CSS Personalizado: Escudo INER de fondo y márgenes adaptados
+# CSS Personalizado: Escudo INER de fondo y estilos
 st.markdown(
     """
     <style>
@@ -35,7 +35,7 @@ st.markdown(
         z-index: -1;
     }
 
-    /* Margen superior para evitar solapamientos */
+    /* Margen superior */
     .block-container {
         padding-top: 2.5rem !important;
         padding-bottom: 2rem !important;
@@ -72,7 +72,7 @@ st.markdown(
         font-size: 0.95rem;
     }
 
-    /* Botones principales de la Fila 2 y 3 */
+    /* Estilo general de los botones */
     div[data-testid="stButton"] > button {
         color: #E63946 !important;
         font-weight: bold !important;
@@ -152,14 +152,13 @@ with col1_4:
 st.write("")
 
 # ==========================================
-# FILA 2: LABORATORIOS | 502 | 503 | 504 | 506 | 507 | 508 | 510 | 🏠
+# FILA 2: LABORATORIOS | 502 | 503 | 504 | 506 | 507 | 508 | 510 | 513 | 514 | 🏠
 # ==========================================
-cols_f2 = st.columns([2, 1, 1, 1, 1, 1, 1, 1, 1])
+labs = ["502", "503", "504", "506", "507", "508", "510", "513", "514", "INICIO"]
+cols_f2 = st.columns([2] + [1] * len(labs))
 
 with cols_f2[0]:
     st.markdown('<div class="label-box">LABORATORIOS</div>', unsafe_allow_html=True)
-
-labs = ["502", "503", "504", "506", "507", "508", "510", "INICIO"]
 
 for idx, lab in enumerate(labs, start=1):
     with cols_f2[idx]:
@@ -173,11 +172,11 @@ for idx, lab in enumerate(labs, start=1):
                 st.session_state["sub_seccion"] = None
 
 # ==========================================
-# FILA 3: USO DE EQUIPOS | CONDICIONES
+# FILA 3: USO DE EQUIPOS | CONDICIONES AMBIENTALES | CONDICIONES DE EQUIPOS
 # ==========================================
 if st.session_state["lab_seleccionado"] is not None:
     st.write("")
-    col3_1, col3_2 = st.columns([1, 1])
+    col3_1, col3_2, col3_3 = st.columns([1, 1, 1])
 
     lab_actual = st.session_state["lab_seleccionado"]
 
@@ -188,13 +187,21 @@ if st.session_state["lab_seleccionado"] is not None:
             st.session_state["sub_seccion"] = "USO DE EQUIPOS"
 
     with col3_2:
-        if st.button(f"CONDICIONES ({lab_actual})", key="btn_condiciones"):
-            st.session_state["sub_seccion"] = "CONDICIONES"
+        if st.button(
+            f"CONDICIONES AMBIENTALES ({lab_actual})", key="btn_cond_ambientales"
+        ):
+            st.session_state["sub_seccion"] = "CONDICIONES AMBIENTALES"
+
+    with col3_3:
+        if st.button(
+            f"CONDICIONES DE EQUIPOS ({lab_actual})", key="btn_cond_equipos"
+        ):
+            st.session_state["sub_seccion"] = "CONDICIONES DE EQUIPOS"
 
     st.markdown("---")
 
     # ==========================================
-    # DESPLIEGUE EXCLUSIVO AL PULSAR "USO DE EQUIPOS"
+    # DESPLIEGUE SEGÚN LA SUBSECCIÓN SELECCIONADA
     # ==========================================
     if st.session_state["sub_seccion"] == "USO DE EQUIPOS":
         if lab_actual == "503":
@@ -292,11 +299,17 @@ if st.session_state["lab_seleccionado"] is not None:
             st.subheader(f"Laboratorio {lab_actual}")
             st.caption("Aún no hay equipos configurados para este laboratorio.")
 
-    elif st.session_state["sub_seccion"] == "CONDICIONES":
+    elif st.session_state["sub_seccion"] == "CONDICIONES AMBIENTALES":
         st.subheader(f"Condiciones Ambientales — Laboratorio {lab_actual}")
-        st.info("Módulo de monitoreo de condiciones (Temperatura, Humedad, etc.)")
+        st.info(
+            "Módulo de monitoreo ambiental (Temperatura, Humedad relativa, Presión)."
+        )
+
+    elif st.session_state["sub_seccion"] == "CONDICIONES DE EQUIPOS":
+        st.subheader(f"Condiciones de Equipos — Laboratorio {lab_actual}")
+        st.info("Módulo de verificación operativa y estado técnico de los equipos.")
 
     else:
         st.caption(
-            "👈 Haz clic en 'USO DE EQUIPOS' o 'CONDICIONES' para ver la información."
+            "👈 Haz clic en alguna de las opciones superiores para ver la información."
         )
