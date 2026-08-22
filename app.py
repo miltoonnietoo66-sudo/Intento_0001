@@ -1,4 +1,5 @@
 import io
+import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import pandas as pd
@@ -14,8 +15,113 @@ st.set_page_config(
 )
 
 TZ_CDMX = ZoneInfo("America/Mexico_City")
+DB_NAME = "laboratorio_iner.db"
 
-# 2. CSS PERSONALIZADO (Estilos e interfaz visual)
+# 2. GESTIÓN Y CONFIGURACIÓN DE BASE DE DATOS SQLITE
+def obtener_conexion():
+    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def inicializar_bd():
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    
+    # Tabla de Equipos de Uso
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS equipos (
+            id TEXT PRIMARY KEY,
+            fecha_hora TEXT,
+            tipo TEXT,
+            numero TEXT,
+            marca TEXT,
+            modelo TEXT,
+            serie TEXT,
+            inventario TEXT,
+            ubicacion_lab TEXT
+        )
+    """)
+    
+    # Tabla de Registros de Uso de Equipos (Bitácora)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS registros_uso (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            equipo_id TEXT,
+            accion TEXT,
+            fecha_hora_cdmx TEXT
+        )
+    """)
+    
+    # Tabla de Configuración de Condiciones Ambientales
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS config_ambientales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha_hora TEXT,
+            tipo TEXT,
+            val_min TEXT,
+            val_max TEXT,
+            instrumento TEXT,
+            ubicacion_lab TEXT
+        )
+    """)
+
+    # Tabla de Configuración de Condiciones de Equipos
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS config_condiciones_equipos (
+            id TEXT PRIMARY KEY,
+            fecha_hora TEXT,
+            tipo_equipo TEXT,
+            numero TEXT,
+            marca TEXT,
+            modelo TEXT,
+            serie TEXT,
+            inventario TEXT,
+            ubicacion_lab TEXT
+        )
+    """)
+
+    # Tabla de Correcciones (Guarda rangos y factores de corrección)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS correcciones_rangos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entidad_id TEXT,
+            rango TEXT,
+            correccion REAL
+        )
+    """)
+
+    # Tabla Histórica de Mediciones Ambientales
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS mediciones_ambientales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha_hora TEXT,
+            lab TEXT,
+            temp_leida REAL,
+            temp_corr REAL,
+            hum_leida REAL,
+            hum_corr REAL
+        )
+    """)
+
+    # Tabla Histórica de Mediciones de Condiciones de Equipos
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS mediciones_equipos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha_hora TEXT,
+            lab TEXT,
+            parametro TEXT,
+            lectura TEXT,
+            corregida TEXT
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+# Inicializamos la estructura de la base de datos
+inicializar_bd()
+
+# 3. CSS PERSONALIZADO (Estilos e interfaz visual)
 st.markdown(
     """
     <style>
@@ -104,7 +210,6 @@ st.markdown(
         margin-bottom: 15px;
     }
 
-    /* Estilo para los círculos/óvalos naranjas de Lectura Corregida */
     .oval-corregido {
         border: 2px solid #F4A261;
         background-color: #FFF3E0;
@@ -123,7 +228,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 3. INICIALIZACIÓN DE ESTADOS DE SESIÓN (Session State)
+# 4. INICIALIZACIÓN DE ESTADOS DE NAVEGACIÓN
 if "lab_seleccionado" not in st.session_state:
     st.session_state["lab_seleccionado"] = None
 
@@ -139,14 +244,13 @@ if "sub_seccion_lab" not in st.session_state:
 if "equipo_activo_id" not in st.session_state:
     st.session_state["equipo_activo_id"] = None
 
-# Guardado temporal de PDFs listos para descarga opcional
 if "pdf_amb_listo" not in st.session_state:
     st.session_state["pdf_amb_listo"] = None
 
 if "pdf_ce_listo" not in st.session_state:
     st.session_state["pdf_ce_listo"] = None
 
-# Formularios del menú MAS (+)
+# Formularios menú MAS
 if "sel_tipo_equipo" not in st.session_state:
     st.session_state["sel_tipo_equipo"] = "GABS"
 
@@ -159,32 +263,11 @@ if "sel_tipo_amb" not in st.session_state:
 if "sel_tipo_ce" not in st.session_state:
     st.session_state["sel_tipo_ce"] = "CONG"
 
-# Bases de Datos Internas
-if "inventario_equipos" not in st.session_state:
-    st.session_state["inventario_equipos"] = []
-
-if "registros_uso" not in st.session_state:
-    st.session_state["registros_uso"] = []
-
-if "condiciones_ambientales_db" not in st.session_state:
-    st.session_state["condiciones_ambientales_db"] = []
-
-if "condiciones_equipos_db" not in st.session_state:
-    st.session_state["condiciones_equipos_db"] = []
-
-if "historico_mediciones_amb" not in st.session_state:
-    st.session_state["historico_mediciones_amb"] = []
-
-if "historico_mediciones_eq" not in st.session_state:
-    st.session_state["historico_mediciones_eq"] = []
-
 labs_lista = ["502", "503", "504", "506", "507", "508", "510", "513", "514"]
 
-
-# 4. FUNCIONES AUXILIARES
+# 5. FUNCIONES AUXILIARES Y ACCESO A BASE DE DATOS
 def obtener_hora_cdmx():
     return datetime.now(TZ_CDMX).strftime("%d/%m/%Y %H:%M:%S")
-
 
 def aplicar_estilo_seleccion(llave_css):
     st.markdown(
@@ -200,11 +283,7 @@ def aplicar_estilo_seleccion(llave_css):
         unsafe_allow_html=True,
     )
 
-
 def calcular_correccion_valor(valor_leido, tabla_correcciones, columna_rango="Rango"):
-    """
-    Busca el rango correspondiente y suma la corrección a la lectura de entrada.
-    """
     if valor_leido is None:
         return None, 0.0
 
@@ -236,8 +315,84 @@ def calcular_correccion_valor(valor_leido, tabla_correcciones, columna_rango="Ra
 
     return round(valor_leido, 2), 0.0
 
+# --- LECTURAS DESDE SQLITE ---
+def cargar_equipos(lab=None):
+    conn = obtener_conexion()
+    if lab:
+        df = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab,))
+    else:
+        df = pd.read_sql_query("SELECT * FROM equipos", conn)
+    conn.close()
+    
+    # Adaptar columnas al formato de diccionario esperado
+    res = []
+    for _, r in df.iterrows():
+        res.append({
+            "id": r["id"],
+            "Fecha_Hora": r["fecha_hora"],
+            "Tipo": r["tipo"],
+            "Numero": r["numero"],
+            "Marca": r["marca"],
+            "Modelo": r["modelo"],
+            "Serie": r["serie"],
+            "Inventario": r["inventario"],
+            "Ubicacion_Lab": r["ubicacion_lab"]
+        })
+    return res
 
-# 5. GENERADORES DE REPORTES PDF EN REPORTLAB
+def cargar_correcciones(entidad_id):
+    conn = obtener_conexion()
+    df = pd.read_sql_query("SELECT rango as Rango, correccion as Corrección FROM correcciones_rangos WHERE entidad_id = ?", conn, params=(entidad_id,))
+    conn.close()
+    return df.to_dict(orient="records")
+
+def cargar_condicion_ambiental_config(lab, tipo):
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM config_ambientales WHERE ubicacion_lab = ? AND tipo = ? ORDER BY id DESC LIMIT 1", (lab, tipo))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        cfg = dict(row)
+        entidad_id = f"AMB_{lab}_{tipo}"
+        return {
+            "Fecha_Hora": cfg["fecha_hora"],
+            "Tipo": cfg["tipo"],
+            "Min": cfg["val_min"],
+            "Max": cfg["val_max"],
+            "Instrumento": cfg["instrumento"],
+            "Correcciones": cargar_correcciones(entidad_id),
+            "Ubicacion_Lab": cfg["ubicacion_lab"]
+        }
+    return None
+
+def cargar_condiciones_equipos_db(lab):
+    conn = obtener_conexion()
+    df = pd.read_sql_query("SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab,))
+    conn.close()
+    res = []
+    for _, r in df.iterrows():
+        res.append({
+            "id_ce": r["id"],
+            "Fecha_Hora": r["fecha_hora"],
+            "Tipo_Equipo": r["tipo_equipo"],
+            "Numero": r["numero"],
+            "Marca": r["marca"],
+            "Modelo": r["modelo"],
+            "Serie": r["serie"],
+            "Inventario": r["inventario"],
+            "Correcciones": cargar_correcciones(r["id"]),
+            "Ubicacion_Lab": r["ubicacion_lab"]
+        })
+    return res
+
+def cargar_registros_uso(equipo_id):
+    conn = obtener_conexion()
+    df = pd.read_sql_query("SELECT accion as Acción, fecha_hora_cdmx as FechaHora_CDMX FROM registros_uso WHERE equipo_id = ? ORDER BY id ASC", conn, params=(equipo_id,))
+    conn.close()
+    return df.to_dict(orient="records")
+
+# 6. GENERADORES DE REPORTES PDF EN REPORTLAB
 def generar_pdf_condiciones_ambientales(lab, reg_config, temp_leida, temp_corr, hum_leida, hum_corr):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -246,15 +401,9 @@ def generar_pdf_condiciones_ambientales(lab, reg_config, temp_leida, temp_corr, 
     elements = []
     styles = getSampleStyleSheet()
 
-    title_style = ParagraphStyle(
-        'TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor('#0077B6'), alignment=1, spaceAfter=8
-    )
-    header_style = ParagraphStyle(
-        'HeaderStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor('#0077B6')
-    )
-    cell_style = ParagraphStyle(
-        'CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9
-    )
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor('#0077B6'), alignment=1, spaceAfter=8)
+    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor('#0077B6'))
+    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9)
 
     elements.append(Paragraph("INSTITUTO NACIONAL DE ENFERMEDADES RESPIRATORIAS", title_style))
     elements.append(Paragraph(f"REGISTRO DE CONDICIONES AMBIENTALES - LAB {lab}", ParagraphStyle('SubTitle', parent=title_style, fontSize=11, textColor=colors.HexColor('#2A9D8F'))))
@@ -306,24 +455,15 @@ def generar_pdf_condiciones_ambientales(lab, reg_config, temp_leida, temp_corr, 
     buffer.seek(0)
     return buffer
 
-
 def generar_pdf_condiciones_equipos(lab, equipo_info, mediciones):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
-    )
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     elements = []
     styles = getSampleStyleSheet()
 
-    title_style = ParagraphStyle(
-        'TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor('#0077B6'), alignment=1, spaceAfter=8
-    )
-    header_style = ParagraphStyle(
-        'HeaderStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor('#0077B6')
-    )
-    cell_style = ParagraphStyle(
-        'CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9
-    )
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor('#0077B6'), alignment=1, spaceAfter=8)
+    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor('#0077B6'))
+    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9)
 
     elements.append(Paragraph("INSTITUTO NACIONAL DE ENFERMEDADES RESPIRATORIAS", title_style))
     elements.append(Paragraph(f"REGISTRO DE CONDICIÓN DE EQUIPO - LAB {lab}", ParagraphStyle('SubTitle', parent=title_style, fontSize=11, textColor=colors.HexColor('#2A9D8F'))))
@@ -371,12 +511,9 @@ def generar_pdf_condiciones_equipos(lab, equipo_info, mediciones):
     buffer.seek(0)
     return buffer
 
-
 def generar_pdf_equipo(equipo_info, registros_equipo):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
-    )
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     elements = []
     styles = getSampleStyleSheet()
 
@@ -559,19 +696,21 @@ if st.session_state["modo_agregar"]:
         st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
         if st.button("HECHO", key="btn_hecho_equipos"):
             id_unico = f"{st.session_state['sel_tipo_equipo']}-{num_eq}_{st.session_state['sel_ubicacion_lab']}"
-            nuevo_registro = {
-                "id": id_unico,
-                "Fecha_Hora": obtener_hora_cdmx(),
-                "Tipo": st.session_state["sel_tipo_equipo"],
-                "Numero": num_eq,
-                "Marca": marca_eq,
-                "Modelo": modelo_eq,
-                "Serie": serie_eq,
-                "Inventario": inv_eq,
-                "Ubicacion_Lab": st.session_state["sel_ubicacion_lab"],
-            }
-            st.session_state["inventario_equipos"].append(nuevo_registro)
-            st.success(f"✅ Equipo {st.session_state['sel_tipo_equipo']}-{num_eq} guardado exitosamente para el Lab {st.session_state['sel_ubicacion_lab']}.")
+            
+            # INSERCIÓN EN BASE DE DATOS SQLITE
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO equipos (id, fecha_hora, tipo, numero, marca, modelo, serie, inventario, ubicacion_lab)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                id_unico, obtener_hora_cdmx(), st.session_state['sel_tipo_equipo'],
+                num_eq, marca_eq, modelo_eq, serie_eq, inv_eq, st.session_state['sel_ubicacion_lab']
+            ))
+            conn.commit()
+            conn.close()
+
+            st.success(f"💾 Guardado PERMANENTEMENTE en SQLite: Equipo {st.session_state['sel_tipo_equipo']}-{num_eq} en Lab {st.session_state['sel_ubicacion_lab']}.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     # FORMULARIO CONDICIONES AMBIENTALES
@@ -624,17 +763,22 @@ if st.session_state["modo_agregar"]:
         st.write("")
         st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
         if st.button("HECHO", key="btn_hecho_ambientales"):
-            reg_amb = {
-                "Fecha_Hora": obtener_hora_cdmx(),
-                "Tipo": st.session_state["sel_tipo_amb"],
-                "Min": val_min,
-                "Max": val_max,
-                "Instrumento": inst_medicion,
-                "Correcciones": tabla_corr_amb.to_dict(orient="records"),
-                "Ubicacion_Lab": st.session_state["sel_ubicacion_lab"],
-            }
-            st.session_state["condiciones_ambientales_db"].append(reg_amb)
-            st.success("✅ Condición ambiental guardada exitosamente.")
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO config_ambientales (fecha_hora, tipo, val_min, val_max, instrumento, ubicacion_lab)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (obtener_hora_cdmx(), st.session_state["sel_tipo_amb"], val_min, val_max, inst_medicion, st.session_state["sel_ubicacion_lab"]))
+            
+            entidad_id = f"AMB_{st.session_state['sel_ubicacion_lab']}_{st.session_state['sel_tipo_amb']}"
+            cursor.execute("DELETE FROM correcciones_rangos WHERE entidad_id = ?", (entidad_id,))
+            for _, fila in tabla_corr_amb.iterrows():
+                cursor.execute("INSERT INTO correcciones_rangos (entidad_id, rango, correccion) VALUES (?, ?, ?)",
+                               (entidad_id, str(fila["Rango"]), float(fila["Corrección"])))
+            conn.commit()
+            conn.close()
+
+            st.success("💾 Configuración ambiental guardada permanentemente en la base de datos.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     # FORMULARIO CONDICIONES DE EQUIPOS
@@ -693,20 +837,22 @@ if st.session_state["modo_agregar"]:
         st.write("")
         st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
         if st.button("HECHO", key="btn_hecho_cond_equipos"):
-            reg_ce = {
-                "id_ce": f"{st.session_state['sel_tipo_ce']}-{ce_num}_{st.session_state['sel_ubicacion_lab']}",
-                "Fecha_Hora": obtener_hora_cdmx(),
-                "Tipo_Equipo": st.session_state["sel_tipo_ce"],
-                "Numero": ce_num,
-                "Marca": ce_marca,
-                "Modelo": ce_mod,
-                "Serie": ce_serie,
-                "Inventario": ce_inv,
-                "Correcciones": tabla_ce_corr.to_dict(orient="records"),
-                "Ubicacion_Lab": st.session_state["sel_ubicacion_lab"],
-            }
-            st.session_state["condiciones_equipos_db"].append(reg_ce)
-            st.success("✅ Condición de equipo guardada correctamente.")
+            id_ce = f"{st.session_state['sel_tipo_ce']}-{ce_num}_{st.session_state['sel_ubicacion_lab']}"
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO config_condiciones_equipos (id, fecha_hora, tipo_equipo, numero, marca, modelo, serie, inventario, ubicacion_lab)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (id_ce, obtener_hora_cdmx(), st.session_state['sel_tipo_ce'], ce_num, ce_marca, ce_mod, ce_serie, ce_inv, st.session_state['sel_ubicacion_lab']))
+            
+            cursor.execute("DELETE FROM correcciones_rangos WHERE entidad_id = ?", (id_ce,))
+            for _, fila in tabla_ce_corr.iterrows():
+                cursor.execute("INSERT INTO correcciones_rangos (entidad_id, rango, correccion) VALUES (?, ?, ?)",
+                               (id_ce, str(fila["Rango"]), float(fila["Corrección"])))
+            conn.commit()
+            conn.close()
+
+            st.success("💾 Condición de equipo guardada permanentemente en SQLite.")
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ==========================================
@@ -744,7 +890,7 @@ elif st.session_state["lab_seleccionado"] is not None:
     # SECCIÓN 1: USO DE EQUIPOS
     if st.session_state["sub_seccion_lab"] == "USO DE EQUIPOS":
         st.markdown(f'<div class="section-title">EQUIPOS DISPONIBLES EN LABORATORIO {lab_actual}</div>', unsafe_allow_html=True)
-        equipos_lab = [e for e in st.session_state["inventario_equipos"] if e.get("Ubicacion_Lab") == lab_actual]
+        equipos_lab = cargar_equipos(lab_actual)
 
         if not equipos_lab:
             st.warning(f"⚠️ No hay equipos registrados para el Laboratorio {lab_actual}. Agrega equipos usando el botón ➕ de la barra superior.")
@@ -774,28 +920,30 @@ elif st.session_state["lab_seleccionado"] is not None:
                     with c_init:
                         st.markdown("<h3 style='color:#2A9D8F; text-align:center;'>INICIO</h3>", unsafe_allow_html=True)
                         if st.button("🟢 REGISTRAR INICIO DE USO", key=f"btn_init_{eq_sel['id']}"):
-                            st.session_state["registros_uso"].append({
-                                "equipo_id": eq_sel["id"],
-                                "Acción": "INICIO",
-                                "FechaHora_CDMX": obtener_hora_cdmx()
-                            })
-                            st.toast("🟢 Inicio registrado correctamente")
+                            conn = obtener_conexion()
+                            cursor = conn.cursor()
+                            cursor.execute("INSERT INTO registros_uso (equipo_id, accion, fecha_hora_cdmx) VALUES (?, ?, ?)",
+                                           (eq_sel["id"], "INICIO", obtener_hora_cdmx()))
+                            conn.commit()
+                            conn.close()
+                            st.toast("🟢 Inicio registrado correctamente en la Base de Datos")
                             st.rerun()
 
                     with c_fin:
                         st.markdown("<h3 style='color:#E63946; text-align:center;'>FINAL</h3>", unsafe_allow_html=True)
                         if st.button("🔴 REGISTRAR FINALIZACIÓN", key=f"btn_fin_{eq_sel['id']}"):
-                            st.session_state["registros_uso"].append({
-                                "equipo_id": eq_sel["id"],
-                                "Acción": "FINAL",
-                                "FechaHora_CDMX": obtener_hora_cdmx()
-                            })
-                            st.toast("🔴 Finalización registrada correctamente")
+                            conn = obtener_conexion()
+                            cursor = conn.cursor()
+                            cursor.execute("INSERT INTO registros_uso (equipo_id, accion, fecha_hora_cdmx) VALUES (?, ?, ?)",
+                                           (eq_sel["id"], "FINAL", obtener_hora_cdmx()))
+                            conn.commit()
+                            conn.close()
+                            st.toast("🔴 Finalización registrada correctamente en la Base de Datos")
                             st.rerun()
 
                     st.write("")
                     st.write("**Historial de Actividad del Equipo:**")
-                    reg_filtrados = [r for r in st.session_state["registros_uso"] if r["equipo_id"] == eq_sel["id"]]
+                    reg_filtrados = cargar_registros_uso(eq_sel["id"])
 
                     if reg_filtrados:
                         df_usos = pd.DataFrame(reg_filtrados)[["Acción", "FechaHora_CDMX"]]
@@ -816,12 +964,11 @@ elif st.session_state["lab_seleccionado"] is not None:
     elif st.session_state["sub_seccion_lab"] == "CONDICIONES AMBIENTALES":
         st.markdown(f'<div class="section-title">CONDICIONES AMBIENTALES - LAB {lab_actual}</div>', unsafe_allow_html=True)
 
-        cfg_temp = next((a for a in st.session_state["condiciones_ambientales_db"] if a.get("Ubicacion_Lab") == lab_actual and a.get("Tipo") == "TEMP"), None)
-        cfg_hum = next((a for a in st.session_state["condiciones_ambientales_db"] if a.get("Ubicacion_Lab") == lab_actual and a.get("Tipo") == "%H"), None)
+        cfg_temp = cargar_condicion_ambiental_config(lab_actual, "TEMP")
+        cfg_hum = cargar_condicion_ambiental_config(lab_actual, "%H")
 
         col_amb_temp, col_amb_hum = st.columns(2)
 
-        # Entrada Temperatura
         with col_amb_temp:
             st.markdown("<h3 style='text-align:center; color:#0077B6;'>TEMPERATURA</h3>", unsafe_allow_html=True)
             inp_temp = st.number_input("Ingresar Lectura (°C)", key=f"inp_temp_{lab_actual}", value=None, step=0.1)
@@ -834,7 +981,6 @@ elif st.session_state["lab_seleccionado"] is not None:
             val_disp_t = f"{t_corregida} °C" if t_corregida is not None else "0.0 °C"
             st.markdown(f'<div class="oval-corregido">Lectura Corregida: {val_disp_t} (Corr: {factor_t:+} °C)</div>', unsafe_allow_html=True)
 
-        # Entrada Humedad
         with col_amb_hum:
             st.markdown("<h3 style='text-align:center; color:#0077B6;'>% HUMEDAD</h3>", unsafe_allow_html=True)
             inp_hum = st.number_input("Ingresar Lectura (%H)", key=f"inp_hum_{lab_actual}", value=None, step=0.1)
@@ -850,17 +996,16 @@ elif st.session_state["lab_seleccionado"] is not None:
         st.write("")
         st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
 
-        # BOTÓN HECHO: Solo guarda en el historial y prepara el PDF en sesión
         if st.button("HECHO", key=f"btn_hecho_amb_{lab_actual}"):
-            st.session_state["historico_mediciones_amb"].append({
-                "Fecha_Hora": obtener_hora_cdmx(),
-                "Lab": lab_actual,
-                "Temp_Leida": inp_temp,
-                "Temp_Corr": t_corregida,
-                "Hum_Leida": inp_hum,
-                "Hum_Corr": h_corregida
-            })
-            # Pre-generar PDF para su descarga opcional
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO mediciones_ambientales (fecha_hora, lab, temp_leida, temp_corr, hum_leida, hum_corr)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (obtener_hora_cdmx(), lab_actual, inp_temp, t_corregida, inp_hum, h_corregida))
+            conn.commit()
+            conn.close()
+
             pdf_amb_bytes = generar_pdf_condiciones_ambientales(
                 lab_actual, cfg_temp or cfg_hum, inp_temp, t_corregida, inp_hum, h_corregida
             )
@@ -868,11 +1013,10 @@ elif st.session_state["lab_seleccionado"] is not None:
                 "bytes": pdf_amb_bytes,
                 "nombre": f"Condiciones_Ambientales_Lab_{lab_actual}_{datetime.now(TZ_CDMX).strftime('%Y%m%d_%H%M')}.pdf"
             }
-            st.success("✅ Registro guardado con éxito.")
+            st.success("💾 Mediciones ambientales guardadas permanentemente.")
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # BOTÓN OPCIONAL DE DESCARGA PDF (Aparece únicamente si hay un registro guardado)
         if st.session_state["pdf_amb_listo"]:
             st.write("")
             st.download_button(
@@ -887,7 +1031,7 @@ elif st.session_state["lab_seleccionado"] is not None:
     elif st.session_state["sub_seccion_lab"] == "CONDICIONES DE EQUIPOS":
         st.markdown(f'<div class="section-title">CONDICIONES DE EQUIPOS - LAB {lab_actual}</div>', unsafe_allow_html=True)
 
-        equipos_ce_lab = [c for c in st.session_state["condiciones_equipos_db"] if c.get("Ubicacion_Lab") == lab_actual]
+        equipos_ce_lab = cargar_condiciones_equipos_db(lab_actual)
 
         if not equipos_ce_lab:
             st.info(f"No hay equipos de temperatura/CO2 configurados en el Laboratorio {lab_actual}. Regístralos en el menú ➕ (MAS) > CONDICIONES DE EQUIPOS.")
@@ -902,13 +1046,7 @@ elif st.session_state["lab_seleccionado"] is not None:
                     titulo_eq = f"{eq_ce['Tipo_Equipo']}-{eq_ce['Numero']}"
                     st.markdown(f"<div style='border: 1px solid #0077B6; border-radius: 4px; padding: 4px; text-align: center; font-weight: bold; background-color: #F0F8FF; color: #0077B6; margin-bottom: 5px;'>{titulo_eq}</div>", unsafe_allow_html=True)
 
-                    # Entrada de Lectura Principal (Temperatura)
-                    val_leido = st.number_input(
-                        f"Lectura Temp",
-                        key=f"ce_val_{eq_ce['id_ce']}",
-                        value=None,
-                        step=0.1
-                    )
+                    val_leido = st.number_input(f"Lectura Temp", key=f"ce_val_{eq_ce['id_ce']}", value=None, step=0.1)
 
                     val_corr, f_corr = None, 0.0
                     if val_leido is not None:
@@ -924,14 +1062,8 @@ elif st.session_state["lab_seleccionado"] is not None:
                             "Corregida": f"{val_corr} °C"
                         })
 
-                    # Si el equipo es Incubadora 1CO2, mostrar campo secundario de % CO2
                     if eq_ce["Tipo_Equipo"] == "1CO2":
-                        val_co2 = st.number_input(
-                            f"Lectura % CO2",
-                            key=f"ce_co2_{eq_ce['id_ce']}",
-                            value=None,
-                            step=0.1
-                        )
+                        val_co2 = st.number_input(f"Lectura % CO2", key=f"ce_co2_{eq_ce['id_ce']}", value=None, step=0.1)
 
                         val_co2_corr, f_co2_corr = None, 0.0
                         if val_co2 is not None:
@@ -950,24 +1082,27 @@ elif st.session_state["lab_seleccionado"] is not None:
             st.write("")
             st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
 
-            # BOTÓN HECHO: Guarda los datos en el historial y habilita la descarga del PDF opcional
             if st.button("HECHO", key=f"btn_hecho_ce_{lab_actual}"):
-                st.session_state["historico_mediciones_eq"].append({
-                    "Fecha_Hora": obtener_hora_cdmx(),
-                    "Lab": lab_actual,
-                    "Mediciones": mediciones_resumen
-                })
-                # Generar PDF en sesión
+                conn = obtener_conexion()
+                cursor = conn.cursor()
+                fecha_actual_cdmx = obtener_hora_cdmx()
+                for m in mediciones_resumen:
+                    cursor.execute("""
+                        INSERT INTO mediciones_equipos (fecha_hora, lab, parametro, lectura, corregida)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (fecha_actual_cdmx, lab_actual, m["Parametro"], str(m["Lectura"]), str(m["Corregida"])))
+                conn.commit()
+                conn.close()
+
                 pdf_ce_bytes = generar_pdf_condiciones_equipos(lab_actual, equipos_ce_lab[0], mediciones_resumen)
                 st.session_state["pdf_ce_listo"] = {
                     "bytes": pdf_ce_bytes,
                     "nombre": f"Condicion_Equipos_Lab_{lab_actual}_{datetime.now(TZ_CDMX).strftime('%Y%m%d_%H%M')}.pdf"
                 }
-                st.success("✅ Condición de equipos registrada con éxito.")
+                st.success("💾 Mediciones de equipos guardadas en la base de datos SQLite.")
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # BOTÓN OPCIONAL DE DESCARGA PDF (Aparece únicamente si hay un registro guardado)
             if st.session_state["pdf_ce_listo"]:
                 st.write("")
                 st.download_button(
