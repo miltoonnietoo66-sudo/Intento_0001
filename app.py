@@ -8,7 +8,6 @@ st.set_page_config(
     page_title="Sistema INER - Gestión de Laboratorios", layout="wide"
 )
 
-# Zona horaria oficial de Ciudad de México
 TZ_CDMX = ZoneInfo("America/Mexico_City")
 
 # CSS Personalizado
@@ -25,7 +24,6 @@ st.markdown(
         background-size: 420px;
     }
 
-    /* Capa de contraste */
     .stApp::before {
         content: "";
         position: fixed;
@@ -37,13 +35,12 @@ st.markdown(
         z-index: -1;
     }
 
-    /* Margen superior */
     .block-container {
         padding-top: 2rem !important;
         padding-bottom: 2rem !important;
     }
 
-    /* Estilo de Cajas Azules Fila 1 */
+    /* Estilo Cajas Azules Fila 1 */
     .label-box {
         border: 2px solid #0077B6;
         background-color: #FFFFFF;
@@ -74,7 +71,7 @@ st.markdown(
         font-size: 0.95rem;
     }
 
-    /* Estilo general para botones */
+    /* Estilo general para botones estándar */
     div[data-testid="stButton"] > button {
         color: #E63946 !important;
         font-weight: bold !important;
@@ -89,7 +86,7 @@ st.markdown(
         background-color: #F0F8FF !important;
     }
 
-    /* Botón HECHO en color destacado */
+    /* Botón HECHO */
     .btn-hecho div[data-testid="stButton"] > button {
         background-color: #2A9D8F !important;
         color: #FFFFFF !important;
@@ -97,7 +94,7 @@ st.markdown(
         font-size: 1.1rem !important;
     }
 
-    /* Encabezados de secciones */
+    /* Títulos de sección */
     .section-title {
         color: #0077B6;
         font-weight: bold;
@@ -124,9 +121,20 @@ if "sub_seccion_mas" not in st.session_state:
 if "sub_seccion_lab" not in st.session_state:
     st.session_state["sub_seccion_lab"] = None
 
-if "historial_registros" not in st.session_state:
-    st.session_state["historial_registros"] = []
+# Selección de botones interactivos
+if "sel_tipo_equipo" not in st.session_state:
+    st.session_state["sel_tipo_equipo"] = "GABS"
 
+if "sel_ubicacion_lab" not in st.session_state:
+    st.session_state["sel_ubicacion_lab"] = "502"
+
+if "sel_tipo_amb" not in st.session_state:
+    st.session_state["sel_tipo_amb"] = "TEMP"
+
+if "sel_tipo_ce" not in st.session_state:
+    st.session_state["sel_tipo_ce"] = "CONG"
+
+# Bases de datos internas
 if "inventario_equipos" not in st.session_state:
     st.session_state["inventario_equipos"] = []
 
@@ -136,14 +144,27 @@ if "condiciones_ambientales_db" not in st.session_state:
 if "condiciones_equipos_db" not in st.session_state:
     st.session_state["condiciones_equipos_db"] = []
 
-equipos_list = ["GABS-3", "CENT-10", "MICR-1"]
-for eq in equipos_list:
-    if f"estado_{eq}" not in st.session_state:
-        st.session_state[f"estado_{eq}"] = "INACTIVO"
+labs_lista = ["502", "503", "504", "506", "507", "508", "510", "513", "514"]
 
 
 def obtener_hora_cdmx():
     return datetime.now(TZ_CDMX).strftime("%d/%m/%Y %H:%M:%S")
+
+
+# Generador de CSS para botones resaltados en verde
+def aplicar_estilo_seleccion(llave_css):
+    st.markdown(
+        f"""
+        <style>
+        div[data-testid="stButton"] > button[key="{llave_css}"] {{
+            background-color: #2A9D8F !important;
+            color: #FFFFFF !important;
+            border: 2px solid #2A9D8F !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ==========================================
@@ -172,32 +193,15 @@ st.write("")
 # ==========================================
 # FILA 2: LABORATORIOS | 502 | 503 | ... | 🏠 | ➕
 # ==========================================
-labs_menu = [
-    "502",
-    "503",
-    "504",
-    "506",
-    "507",
-    "508",
-    "510",
-    "513",
-    "514",
-    "INICIO",
-    "MAS",
-]
-cols_f2 = st.columns([2] + [1] * (len(labs_menu) - 1) + [1])
+labs_menu = labs_lista + ["INICIO", "MAS"]
+cols_f2 = st.columns([2] + [1] * (len(labs_menu)))
 
 with cols_f2[0]:
     st.markdown('<div class="label-box">LABORATORIOS</div>', unsafe_allow_html=True)
 
 for idx, lab in enumerate(labs_menu, start=1):
     with cols_f2[idx]:
-        if lab == "INICIO":
-            etiqueta = "🏠"
-        elif lab == "MAS":
-            etiqueta = "➕"
-        else:
-            etiqueta = lab
+        etiqueta = "🏠" if lab == "INICIO" else ("➕" if lab == "MAS" else lab)
 
         if st.button(etiqueta, key=f"btn_f2_{lab}"):
             if lab == "INICIO":
@@ -216,7 +220,7 @@ for idx, lab in enumerate(labs_menu, start=1):
 st.markdown("---")
 
 # ==========================================
-# FILA 3 (OPCIÓN A): MENÚ DEL BOTÓN "+"
+# FILA 3: MENÚ DEL BOTÓN "+"
 # ==========================================
 if st.session_state["modo_agregar"]:
     col_m1, col_m2, col_m3 = st.columns([1, 1, 1])
@@ -250,11 +254,14 @@ if st.session_state["modo_agregar"]:
 
         with c_tipo:
             st.write("**TIPO**")
-            tipo_eq = st.radio(
-                "Selecciona Tipo",
-                ["GABS", "CENT", "MICR", "BAAG"],
-                key="req_tipo",
-            )
+            tipos_eq = ["GABS", "CENT", "MICR", "BAAG"]
+            for teq in tipos_eq:
+                key_btn = f"btn_teq_{teq}"
+                if st.session_state["sel_tipo_equipo"] == teq:
+                    aplicar_estilo_seleccion(key_btn)
+                if st.button(teq, key=key_btn):
+                    st.session_state["sel_tipo_equipo"] = teq
+                    st.rerun()
 
         with c_num:
             st.write("**NÚMERO**")
@@ -277,39 +284,32 @@ if st.session_state["modo_agregar"]:
             inv_eq = st.text_input("Cód. Inventario", key="req_inv")
 
         st.write("")
-        st.write("**UBICACIÓN**")
-        u1, u2, u3, u4, u5, u6, u7 = st.columns(7)
-        ubicaciones = []
-        with u1:
-            ubicaciones.append(st.text_input("Lab/Piso", key="eq_u1"))
-        with u2:
-            ubicaciones.append(st.text_input("Área", key="eq_u2"))
-        with u3:
-            ubicaciones.append(st.text_input("Mesa", key="eq_u3"))
-        with u4:
-            ubicaciones.append(st.text_input("Estante", key="eq_u4"))
-        with u5:
-            ubicaciones.append(st.text_input("Pos 1", key="eq_u5"))
-        with u6:
-            ubicaciones.append(st.text_input("Pos 2", key="eq_u6"))
-        with u7:
-            ubicaciones.append(st.text_input("Notas", key="eq_u7"))
+        st.write("**UBICACIÓN (SELECCIONAR LABORATORIO)**")
+        cols_ub = st.columns(len(labs_lista))
+        for idx_l, l_code in enumerate(labs_lista):
+            with cols_ub[idx_l]:
+                key_ub = f"btn_ub_lab_{l_code}"
+                if st.session_state["sel_ubicacion_lab"] == l_code:
+                    aplicar_estilo_seleccion(key_ub)
+                if st.button(l_code, key=key_ub):
+                    st.session_state["sel_ubicacion_lab"] = l_code
+                    st.rerun()
 
         st.write("")
         st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
         if st.button("HECHO", key="btn_hecho_equipos"):
             nuevo_registro = {
                 "Fecha_Hora": obtener_hora_cdmx(),
-                "Tipo": tipo_eq,
+                "Tipo": st.session_state["sel_tipo_equipo"],
                 "Numero": num_eq,
                 "Marca": marca_eq,
                 "Modelo": modelo_eq,
                 "Serie": serie_eq,
                 "Inventario": inv_eq,
-                "Ubicación": " | ".join([u for u in ubicaciones if u]),
+                "Ubicación": f"LAB {st.session_state['sel_ubicacion_lab']}",
             }
             st.session_state["inventario_equipos"].append(nuevo_registro)
-            st.success("✅ Equipo registrado exitosamente en el sistema.")
+            st.success("✅ Equipo guardado exitosamente.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     # ------------------------------------------
@@ -321,18 +321,21 @@ if st.session_state["modo_agregar"]:
             unsafe_allow_html=True,
         )
 
-        ca_tipo, ca_rangos, ca_inst, ca_corr = st.columns([1.5, 1.2, 2, 2.5])
+        ca_tipo, ca_rangos, ca_inst, ca_corr = st.columns([1.2, 1.2, 2, 3.5])
 
         with ca_tipo:
             st.write("**TIPO**")
-            tipo_amb = st.radio(
-                "Variable", ["TEMP", "%H"], key="radio_tipo_amb"
-            )
+            for tamb in ["TEMP", "%H"]:
+                key_tamb = f"btn_tamb_{tamb}"
+                if st.session_state["sel_tipo_amb"] == tamb:
+                    aplicar_estilo_seleccion(key_tamb)
+                if st.button(tamb, key=key_tamb):
+                    st.session_state["sel_tipo_amb"] = tamb
+                    st.rerun()
 
         with ca_rangos:
-            st.write("**MÍNIMO**")
+            st.write("**RANGOS**")
             val_min = st.text_input("MIN", key="ca_min")
-            st.write("**MÁXIMO**")
             val_max = st.text_input("MAX", key="ca_max")
 
         with ca_inst:
@@ -340,73 +343,68 @@ if st.session_state["modo_agregar"]:
             inst_medicion = st.text_area("Descripción / Código", key="ca_inst")
 
         with ca_corr:
-            st.write("**CORRECCIÓN**")
-            if tipo_amb == "%H":
-                st.caption("Rangos de Humedad Relative (%H):")
-                r_h = st.selectbox(
-                    "Seleccione Rango",
-                    [
-                        "10 - 20",
-                        "20.1 - 30",
-                        "30.1 - 40",
-                        "40.1 - 50",
-                        "50.1 - 60",
-                        "60.1 - 70",
-                        "70.1 - 80",
-                        "80.1 - 100",
-                        "N/A",
-                    ],
-                    key="select_corr_h",
+            st.write("**CORRECCIÓN (TABLA DE VALORES)**")
+            if st.session_state["sel_tipo_amb"] == "%H":
+                rangos_h = [
+                    "10 - 20",
+                    "20.1 - 30",
+                    "30.1 - 40",
+                    "40.1 - 50",
+                    "50.1 - 60",
+                    "60.1 - 70",
+                    "70.1 - 80",
+                    "80.1 - 100",
+                    "N/A",
+                ]
+                df_corr = pd.DataFrame(
+                    {"Rango %H": rangos_h, "Corrección": [""] * len(rangos_h)}
                 )
-                val_corr_h = st.text_input("Valor Corrección", key="val_corr_h")
             else:
-                st.caption("Rangos de Temperatura (TEMP °C):")
-                r_temp = st.selectbox(
-                    "Seleccione Rango",
-                    [
-                        "10 - 15",
-                        "15.1 - 20",
-                        "20.1 - 25",
-                        "25.1 - 30",
-                        "30.1 - 35",
-                        "N/A",
-                    ],
-                    key="select_corr_temp",
-                )
-                val_corr_t = st.text_input(
-                    "Valor Corrección", key="val_corr_t"
+                rangos_t = [
+                    "10 - 15",
+                    "15.1 - 20",
+                    "20.1 - 25",
+                    "25.1 - 30",
+                    "30.1 - 35",
+                    "N/A",
+                ]
+                df_corr = pd.DataFrame(
+                    {
+                        "Rango TEMP (°C)": rangos_t,
+                        "Corrección": [""] * len(rangos_t),
+                    }
                 )
 
+            tabla_corr_amb = st.data_editor(
+                df_corr,
+                hide_index=True,
+                use_container_width=True,
+                key="editor_corr_amb",
+            )
+
         st.write("")
-        st.write("**UBICACIÓN**")
-        u1, u2, u3, u4, u5, u6, u7 = st.columns(7)
-        ubic_amb = []
-        with u1:
-            ubic_amb.append(st.text_input("Lab", key="ca_u1"))
-        with u2:
-            ubic_amb.append(st.text_input("Zona", key="ca_u2"))
-        with u3:
-            ubic_amb.append(st.text_input("Punto", key="ca_u3"))
-        with u4:
-            ubic_amb.append(st.text_input("Sensor", key="ca_u4"))
-        with u5:
-            ubic_amb.append(st.text_input("Piso", key="ca_u5"))
-        with u6:
-            ubic_amb.append(st.text_input("Ref 1", key="ca_u6"))
-        with u7:
-            ubic_amb.append(st.text_input("Ref 2", key="ca_u7"))
+        st.write("**UBICACIÓN (SELECCIONAR LABORATORIO)**")
+        cols_ub = st.columns(len(labs_lista))
+        for idx_l, l_code in enumerate(labs_lista):
+            with cols_ub[idx_l]:
+                key_ub = f"btn_ub_amb_{l_code}"
+                if st.session_state["sel_ubicacion_lab"] == l_code:
+                    aplicar_estilo_seleccion(key_ub)
+                if st.button(l_code, key=key_ub):
+                    st.session_state["sel_ubicacion_lab"] = l_code
+                    st.rerun()
 
         st.write("")
         st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
         if st.button("HECHO", key="btn_hecho_ambientales"):
             reg_amb = {
                 "Fecha_Hora": obtener_hora_cdmx(),
-                "Tipo": tipo_amb,
+                "Tipo": st.session_state["sel_tipo_amb"],
                 "Min": val_min,
                 "Max": val_max,
                 "Instrumento": inst_medicion,
-                "Correccion_Rango": r_h if tipo_amb == "%H" else r_temp,
-                "Ubicación": " | ".join([u for u in ubic_amb if u]),
+                "Correcciones": tabla_corr_amb.to_dict(orient="records"),
+                "Ubicación": f"LAB {st.session_state['sel_ubicacion_lab']}",
             }
             st.session_state["condiciones_ambientales_db"].append(reg_amb)
             st.success("✅ Condición ambiental guardada exitosamente.")
@@ -421,15 +419,17 @@ if st.session_state["modo_agregar"]:
             unsafe_allow_html=True,
         )
 
-        ce_tipo, ce_datos, ce_corr = st.columns([1.5, 3.5, 3])
+        ce_tipo, ce_datos, ce_corr = st.columns([1.2, 3.5, 3.5])
 
         with ce_tipo:
             st.write("**TIPO EQUIPO**")
-            tipo_ce = st.radio(
-                "Seleccionar",
-                ["CONG", "REFR", "1CO2", "ULTRO"],
-                key="radio_ce_tipo",
-            )
+            for tce in ["CONG", "REFR", "1CO2", "ULTRO"]:
+                key_tce = f"btn_tce_{tce}"
+                if st.session_state["sel_tipo_ce"] == tce:
+                    aplicar_estilo_seleccion(key_tce)
+                if st.button(tce, key=key_tce):
+                    st.session_state["sel_tipo_ce"] = tce
+                    st.rerun()
 
         with ce_datos:
             st.write("**DATOS TÉCNICOS**")
@@ -443,196 +443,61 @@ if st.session_state["modo_agregar"]:
                 ce_inv = st.text_input("INVENTARIO", key="ce_inv")
 
         with ce_corr:
-            st.write("**CORRECCIÓN SEGÚN TIPO**")
-            if tipo_ce == "CONG":
-                rango_ce = st.selectbox(
-                    "Rango Congelador (°C)",
-                    ["-25 a -20", "-19.9 a -15", "-14.9 a -10", "N/A"],
-                    key="ce_rango_cong",
-                )
-            elif tipo_ce == "REFR":
-                rango_ce = st.selectbox(
-                    "Rango Refrigerador (°C)",
-                    ["2 a 5", "5.1 a 8", "8.1 a 10", "N/A"],
-                    key="ce_rango_refr",
-                )
-            elif tipo_ce == "1CO2":
-                rango_ce = st.selectbox(
-                    "Rango Incubadora CO2",
-                    ["36.0 a 37.5 °C", "4.5% a 5.5% CO2", "N/A"],
-                    key="ce_rango_co2",
-                )
+            st.write("**CORRECCIÓN (TABLA DE VALORES)**")
+            tipo_actual = st.session_state["sel_tipo_ce"]
+            if tipo_actual == "CONG":
+                r_list = ["-25 a -20", "-19.9 a -15", "-14.9 a -10", "N/A"]
+            elif tipo_actual == "REFR":
+                r_list = ["2 a 5", "5.1 a 8", "8.1 a 10", "N/A"]
+            elif tipo_actual == "1CO2":
+                r_list = ["36.0 a 37.5 °C", "4.5% a 5.5% CO2", "N/A"]
             else:  # ULTRO
-                rango_ce = st.selectbox(
-                    "Rango Ultracongelador (°C)",
-                    ["-85 a -80", "-79.9 a -70", "-69.9 a -60", "N/A"],
-                    key="ce_rango_ultro",
-                )
+                r_list = ["-85 a -80", "-79.9 a -70", "-69.9 a -60", "N/A"]
 
-            val_ce_corr = st.text_input(
-                "Valor Ajuste / Corrección", key="ce_val_corr"
+            df_ce_corr = pd.DataFrame(
+                {"Rango": r_list, "Corrección": [""] * len(r_list)}
+            )
+            tabla_ce_corr = st.data_editor(
+                df_ce_corr,
+                hide_index=True,
+                use_container_width=True,
+                key="editor_ce_corr",
             )
 
         st.write("")
-        st.write("**UBICACIÓN**")
-        u1, u2, u3, u4, u5, u6, u7 = st.columns(7)
-        ubic_ce = []
-        with u1:
-            ubic_ce.append(st.text_input("Lab", key="ce_u1"))
-        with u2:
-            ubic_ce.append(st.text_input("Sala", key="ce_u2"))
-        with u3:
-            ubic_ce.append(st.text_input("Posición", key="ce_u3"))
-        with u4:
-            ubic_ce.append(st.text_input("Piso", key="ce_u4"))
-        with u5:
-            ubic_ce.append(st.text_input("Sector", key="ce_u5"))
-        with u6:
-            ubic_ce.append(st.text_input("Ref 1", key="ce_u6"))
-        with u7:
-            ubic_ce.append(st.text_input("Ref 2", key="ce_u7"))
+        st.write("**UBICACIÓN (SELECCIONAR LABORATORIO)**")
+        cols_ub = st.columns(len(labs_lista))
+        for idx_l, l_code in enumerate(labs_lista):
+            with cols_ub[idx_l]:
+                key_ub = f"btn_ub_ce_{l_code}"
+                if st.session_state["sel_ubicacion_lab"] == l_code:
+                    aplicar_estilo_seleccion(key_ub)
+                if st.button(l_code, key=key_ub):
+                    st.session_state["sel_ubicacion_lab"] = l_code
+                    st.rerun()
 
         st.write("")
         st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
         if st.button("HECHO", key="btn_hecho_cond_equipos"):
             reg_ce = {
                 "Fecha_Hora": obtener_hora_cdmx(),
-                "Tipo_Equipo": tipo_ce,
+                "Tipo_Equipo": st.session_state["sel_tipo_ce"],
                 "Numero": ce_num,
                 "Marca": ce_marca,
                 "Modelo": ce_mod,
                 "Serie": ce_serie,
                 "Inventario": ce_inv,
-                "Rango_Correccion": rango_ce,
-                "Valor_Correccion": val_ce_corr,
-                "Ubicación": " | ".join([u for u in ubic_ce if u]),
+                "Correcciones": tabla_ce_corr.to_dict(orient="records"),
+                "Ubicación": f"LAB {st.session_state['sel_ubicacion_lab']}",
             }
             st.session_state["condiciones_equipos_db"].append(reg_ce)
             st.success("✅ Condición de equipo guardada correctamente.")
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ==========================================
-# FILA 3 (OPCIÓN B): NAVEGACIÓN NORMAL POR LABORATORIO
+# FILA 3 (NAVEGACIÓN NORMAL)
 # ==========================================
 elif st.session_state["lab_seleccionado"] is not None:
     lab_actual = st.session_state["lab_seleccionado"]
-
-    col3_1, col3_2, col3_3 = st.columns([1, 1, 1])
-
-    with col3_1:
-        if st.button(
-            f"USO DE EQUIPOS ({lab_actual})", key="btn_uso_equipos"
-        ):
-            st.session_state["sub_seccion_lab"] = "USO DE EQUIPOS"
-
-    with col3_2:
-        if st.button(
-            f"CONDICIONES AMBIENTALES ({lab_actual})", key="btn_cond_amb_lab"
-        ):
-            st.session_state["sub_seccion_lab"] = "CONDICIONES AMBIENTALES"
-
-    with col3_3:
-        if st.button(
-            f"CONDICIONES DE EQUIPOS ({lab_actual})", key="btn_cond_eq_lab"
-        ):
-            st.session_state["sub_seccion_lab"] = "CONDICIONES DE EQUIPOS"
-
-    st.write("")
-
-    if st.session_state["sub_seccion_lab"] == "USO DE EQUIPOS":
-        if lab_actual == "503":
-            st.subheader("Control de Equipos en Tiempo Real — Lab 503")
-
-            col_inicio, col_linea, col_final = st.columns([4, 0.2, 4])
-
-            with col_inicio:
-                st.markdown(
-                    "<h3 style='color:#2A9D8F; text-align:center;'>INICIO</h3>",
-                    unsafe_allow_html=True,
-                )
-                for eq in equipos_list:
-                    estado_actual = st.session_state[f"estado_{eq}"]
-                    lbl = (
-                        f"🟢 {eq} (EN CURSO)"
-                        if estado_actual == "EN_USO"
-                        else f"🔵 {eq}"
-                    )
-
-                    if st.button(lbl, key=f"btn_inc_{eq}"):
-                        ts = obtener_hora_cdmx()
-                        st.session_state[f"estado_{eq}"] = "EN_USO"
-                        st.session_state["historial_registros"].append(
-                            {
-                                "Laboratorio": "503",
-                                "Equipo": eq,
-                                "Acción": "INICIO",
-                                "FechaHora_CDMX": ts,
-                            }
-                        )
-                        st.toast(f"Inicio de {eq} a las {ts}")
-                        st.rerun()
-
-            with col_linea:
-                st.markdown(
-                    "<div style='border-left: 2px solid #0077B6; height: 280px; margin: auto;'></div>",
-                    unsafe_allow_html=True,
-                )
-
-            with col_final:
-                st.markdown(
-                    "<h3 style='color:#E63946; text-align:center;'>FINAL</h3>",
-                    unsafe_allow_html=True,
-                )
-                for eq in equipos_list:
-                    estado_actual = st.session_state[f"estado_{eq}"]
-                    lbl_fin = (
-                        f"🔴 {eq} (CONCLUIDO)"
-                        if estado_actual == "FINALIZADO"
-                        else f"🔵 {eq}"
-                    )
-
-                    if st.button(lbl_fin, key=f"btn_fin_{eq}"):
-                        ts = obtener_hora_cdmx()
-                        st.session_state[f"estado_{eq}"] = "FINALIZADO"
-                        st.session_state["historial_registros"].append(
-                            {
-                                "Laboratorio": "503",
-                                "Equipo": eq,
-                                "Acción": "FINAL",
-                                "FechaHora_CDMX": ts,
-                            }
-                        )
-                        st.toast(f"Finalización de {eq} a las {ts}")
-                        st.rerun()
-
-            st.markdown("---")
-            st.subheader("📋 Historial de Pulsos (Hora CDMX)")
-            if st.session_state["historial_registros"]:
-                df_hist = pd.DataFrame(st.session_state["historial_registros"])
-                st.dataframe(df_hist, use_container_width=True)
-            else:
-                st.info("Sin registros de inicio/final aún.")
-
-        else:
-            st.subheader(f"Laboratorio {lab_actual}")
-            st.caption("No hay equipos activos configurados aún.")
-
-    elif st.session_state["sub_seccion_lab"] == "CONDICIONES AMBIENTALES":
-        st.subheader(f"Monitoreo Ambiental — Laboratorio {lab_actual}")
-        if st.session_state["condiciones_ambientales_db"]:
-            st.dataframe(
-                pd.DataFrame(st.session_state["condiciones_ambientales_db"]),
-                use_container_width=True,
-            )
-        else:
-            st.info("Aún no hay registros cargados desde el menú ➕.")
-
-    elif st.session_state["sub_seccion_lab"] == "CONDICIONES DE EQUIPOS":
-        st.subheader(f"Estado de Equipos — Laboratorio {lab_actual}")
-        if st.session_state["condiciones_equipos_db"]:
-            st.dataframe(
-                pd.DataFrame(st.session_state["condiciones_equipos_db"]),
-                use_container_width=True,
-            )
-        else:
-            st.info("Aún no hay registros cargados desde el menú ➕.")
+    st.subheader(f"Vista General — Laboratorio {lab_actual}")
+    st.caption("Selecciona una opción del menú interactivo para continuar.")
