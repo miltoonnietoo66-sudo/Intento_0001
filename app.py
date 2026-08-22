@@ -8,14 +8,14 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 import streamlit as st
 
-# Configuración de página
+# 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
     page_title="Sistema INER - Gestión de Laboratorios", layout="wide"
 )
 
 TZ_CDMX = ZoneInfo("America/Mexico_City")
 
-# CSS Personalizado
+# 2. CSS PERSONALIZADO (Estilos e interfaz visual)
 st.markdown(
     """
     <style>
@@ -103,12 +103,27 @@ st.markdown(
         padding-bottom: 5px;
         margin-bottom: 15px;
     }
+
+    /* Estilo para los círculos/óvalos naranjas de Lectura Corregida */
+    .oval-corregido {
+        border: 2px solid #F4A261;
+        background-color: #FFF3E0;
+        color: #E76F51;
+        font-weight: bold;
+        text-align: center;
+        padding: 0.5rem;
+        border-radius: 20px;
+        margin-top: 5px;
+        margin-bottom: 15px;
+        font-size: 0.95rem;
+        box-shadow: 1px 1px 4px rgba(0,0,0,0.1);
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# Inicialización de Estados de Sesión
+# 3. INICIALIZACIÓN DE ESTADOS DE SESIÓN (Session State)
 if "lab_seleccionado" not in st.session_state:
     st.session_state["lab_seleccionado"] = None
 
@@ -124,7 +139,7 @@ if "sub_seccion_lab" not in st.session_state:
 if "equipo_activo_id" not in st.session_state:
     st.session_state["equipo_activo_id"] = None
 
-# Formularios +
+# Formularios del menú MAS (+)
 if "sel_tipo_equipo" not in st.session_state:
     st.session_state["sel_tipo_equipo"] = "GABS"
 
@@ -137,7 +152,7 @@ if "sel_tipo_amb" not in st.session_state:
 if "sel_tipo_ce" not in st.session_state:
     st.session_state["sel_tipo_ce"] = "CONG"
 
-# Bases de datos internas
+# Bases de Datos Internas
 if "inventario_equipos" not in st.session_state:
     st.session_state["inventario_equipos"] = []
 
@@ -150,9 +165,16 @@ if "condiciones_ambientales_db" not in st.session_state:
 if "condiciones_equipos_db" not in st.session_state:
     st.session_state["condiciones_equipos_db"] = []
 
+if "historico_mediciones_amb" not in st.session_state:
+    st.session_state["historico_mediciones_amb"] = []
+
+if "historico_mediciones_eq" not in st.session_state:
+    st.session_state["historico_mediciones_eq"] = []
+
 labs_lista = ["502", "503", "504", "506", "507", "508", "510", "513", "514"]
 
 
+# 4. FUNCIONES AUXILIARES
 def obtener_hora_cdmx():
     return datetime.now(TZ_CDMX).strftime("%d/%m/%Y %H:%M:%S")
 
@@ -172,8 +194,44 @@ def aplicar_estilo_seleccion(llave_css):
     )
 
 
-# Generador de PDF usando ReportLab
-def generar_pdf_equipo(equipo_info, registros_equipo):
+def calcular_correccion_valor(valor_leido, tabla_correcciones, columna_rango="Rango"):
+    """
+    Busca el rango correspondiente y suma la corrección a la lectura de entrada.
+    """
+    if valor_leido is None:
+        return None, 0.0
+
+    for reg in tabla_correcciones:
+        rango_str = str(reg.get(columna_rango, ""))
+        corr_val = reg.get("Corrección", 0)
+
+        try:
+            factor_corr = float(corr_val) if corr_val != "" else 0.0
+        except ValueError:
+            factor_corr = 0.0
+
+        if "a" in rango_str:
+            partes = rango_str.split("a")
+        elif "-" in rango_str:
+            partes = rango_str.split("-")
+        else:
+            continue
+
+        if len(partes) == 2:
+            try:
+                min_r = float(partes[0].replace("°C", "").replace("%", "").strip())
+                max_r = float(partes[1].replace("°C", "").replace("%", "").strip())
+
+                if min_r <= valor_leido <= max_r:
+                    return round(valor_leido + factor_corr, 2), factor_corr
+            except ValueError:
+                continue
+
+    return round(valor_leido, 2), 0.0
+
+
+# 5. GENERADORES DE REPORTES PDF EN REPORTLAB
+def generar_pdf_condiciones_ambientales(lab, reg_config, temp_leida, temp_corr, hum_leida, hum_corr):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
@@ -182,35 +240,147 @@ def generar_pdf_equipo(equipo_info, registros_equipo):
     styles = getSampleStyleSheet()
 
     title_style = ParagraphStyle(
-        'TitleStyle',
-        parent=styles['Heading1'],
-        fontName='Helvetica-Bold',
-        fontSize=16,
-        textColor=colors.HexColor('#0077B6'),
-        alignment=1,
-        spaceAfter=12
+        'TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor('#0077B6'), alignment=1, spaceAfter=8
     )
-
     header_style = ParagraphStyle(
-        'HeaderStyle',
-        parent=styles['Normal'],
-        fontName='Helvetica-Bold',
-        fontSize=10,
-        textColor=colors.HexColor('#0077B6')
+        'HeaderStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor('#0077B6')
     )
-
     cell_style = ParagraphStyle(
-        'CellStyle',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=9
+        'CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9
     )
 
     elements.append(Paragraph("INSTITUTO NACIONAL DE ENFERMEDADES RESPIRATORIAS", title_style))
-    elements.append(Paragraph("REGISTRO Y BITÁCORA DE USO DE EQUIPO", ParagraphStyle('SubTitle', parent=title_style, fontSize=12, textColor=colors.HexColor('#2A9D8F'))))
-    elements.append(Spacer(1, 10))
+    elements.append(Paragraph(f"REGISTRO DE CONDICIONES AMBIENTALES - LAB {lab}", ParagraphStyle('SubTitle', parent=title_style, fontSize=11, textColor=colors.HexColor('#2A9D8F'))))
+    elements.append(Spacer(1, 8))
 
-    # Encabezado con datos del equipo
+    inst_desc = reg_config.get("Instrumento", "N/A") if reg_config else "No registrado"
+    min_val = reg_config.get("Min", "N/A") if reg_config else "N/A"
+    max_val = reg_config.get("Max", "N/A") if reg_config else "N/A"
+
+    datos_header = [
+        [Paragraph("<b>DATOS DEL INSTRUMENTO Y CONFIGURACIÓN</b>", header_style), ""],
+        [Paragraph(f"<b>INSTRUMENTO / CÓDIGO:</b> {inst_desc}", cell_style), Paragraph(f"<b>FECHA REGISTRO:</b> {obtener_hora_cdmx()}", cell_style)],
+        [Paragraph(f"<b>RANGO PERMITIDO MIN:</b> {min_val}", cell_style), Paragraph(f"<b>RANGO PERMITIDO MAX:</b> {max_val}", cell_style)]
+    ]
+
+    t_header = Table(datos_header, colWidths=[270, 270])
+    t_header.setStyle(TableStyle([
+        ('SPAN', (0, 0), (1, 0)),
+        ('BACKGROUND', (0, 0), (1, 0), colors.HexColor('#F0F8FF')),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#0077B6')),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#0077B6')),
+        ('PADDING', (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(t_header)
+    elements.append(Spacer(1, 12))
+
+    elements.append(Paragraph("<b>LECTURAS REGISTRADAS Y CORREGIDAS</b>", header_style))
+    elements.append(Spacer(1, 4))
+
+    data_tabla = [
+        ["Parámetro", "Lectura Obtenida", "Lectura Corregida"],
+        ["Temperatura (°C)", f"{temp_leida} °C" if temp_leida is not None else "N/A", f"{temp_corr} °C" if temp_corr is not None else "N/A"],
+        ["Humedad (%H)", f"{hum_leida} %" if hum_leida is not None else "N/A", f"{hum_corr} %" if hum_corr is not None else "N/A"]
+    ]
+
+    t_reg = Table(data_tabla, colWidths=[180, 180, 180])
+    t_reg.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0077B6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F9F9F9')]),
+        ('PADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(t_reg)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
+def generar_pdf_condiciones_equipos(lab, equipo_info, mediciones):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
+    )
+    elements = []
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        'TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor('#0077B6'), alignment=1, spaceAfter=8
+    )
+    header_style = ParagraphStyle(
+        'HeaderStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor('#0077B6')
+    )
+    cell_style = ParagraphStyle(
+        'CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9
+    )
+
+    elements.append(Paragraph("INSTITUTO NACIONAL DE ENFERMEDADES RESPIRATORIAS", title_style))
+    elements.append(Paragraph(f"REGISTRO DE CONDICIÓN DE EQUIPO - LAB {lab}", ParagraphStyle('SubTitle', parent=title_style, fontSize=11, textColor=colors.HexColor('#2A9D8F'))))
+    elements.append(Spacer(1, 8))
+
+    datos_header = [
+        [Paragraph("<b>ESPECIFICACIONES TÉCNICAS DEL EQUIPO</b>", header_style), ""],
+        [Paragraph(f"<b>TIPO EQUIPO:</b> {equipo_info.get('Tipo_Equipo', 'N/A')}", cell_style), Paragraph(f"<b>NÚMERO:</b> {equipo_info.get('Numero', 'N/A')}", cell_style)],
+        [Paragraph(f"<b>MARCA:</b> {equipo_info.get('Marca', 'N/A')}", cell_style), Paragraph(f"<b>MODELO:</b> {equipo_info.get('Modelo', 'N/A')}", cell_style)],
+        [Paragraph(f"<b>SERIE:</b> {equipo_info.get('Serie', 'N/A')}", cell_style), Paragraph(f"<b>INVENTARIO:</b> {equipo_info.get('Inventario', 'N/A')}", cell_style)],
+        [Paragraph(f"<b>FECHA Y HORA:</b> {obtener_hora_cdmx()}", cell_style), ""]
+    ]
+
+    t_header = Table(datos_header, colWidths=[270, 270])
+    t_header.setStyle(TableStyle([
+        ('SPAN', (0, 0), (1, 0)),
+        ('BACKGROUND', (0, 0), (1, 0), colors.HexColor('#F0F8FF')),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#0077B6')),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#0077B6')),
+        ('PADDING', (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(t_header)
+    elements.append(Spacer(1, 12))
+
+    elements.append(Paragraph("<b>RESULTADOS DE LA MEDICIÓN Y CORRECCIÓN</b>", header_style))
+    elements.append(Spacer(1, 4))
+
+    data_tabla = [["Parámetro", "Lectura Obtenida", "Lectura Corregida"]]
+    for m in mediciones:
+        data_tabla.append([m["Parametro"], str(m["Lectura"]), str(m["Corregida"])])
+
+    t_reg = Table(data_tabla, colWidths=[180, 180, 180])
+    t_reg.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0077B6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F9F9F9')]),
+        ('PADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(t_reg)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
+def generar_pdf_equipo(equipo_info, registros_equipo):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
+    )
+    elements = []
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor('#0077B6'), alignment=1, spaceAfter=8)
+    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor('#0077B6'))
+    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9)
+
+    elements.append(Paragraph("INSTITUTO NACIONAL DE ENFERMEDADES RESPIRATORIAS", title_style))
+    elements.append(Paragraph("REGISTRO Y BITÁCORA DE USO DE EQUIPO", ParagraphStyle('SubTitle', parent=title_style, fontSize=11, textColor=colors.HexColor('#2A9D8F'))))
+    elements.append(Spacer(1, 8))
+
     datos_header = [
         [Paragraph("<b>DATOS DEL EQUIPO</b>", header_style), ""],
         [Paragraph(f"<b>TIPO:</b> {equipo_info.get('Tipo', 'N/A')}", cell_style), Paragraph(f"<b>NÚMERO:</b> {equipo_info.get('Numero', 'N/A')}", cell_style)],
@@ -225,15 +395,14 @@ def generar_pdf_equipo(equipo_info, registros_equipo):
         ('BACKGROUND', (0, 0), (1, 0), colors.HexColor('#F0F8FF')),
         ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#0077B6')),
         ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#0077B6')),
-        ('PADDING', (0, 0), (-1, -1), 6),
+        ('PADDING', (0, 0), (-1, -1), 5),
     ]))
     elements.append(t_header)
-    elements.append(Spacer(1, 15))
+    elements.append(Spacer(1, 12))
 
     elements.append(Paragraph("<b>HISTORIAL DE INICIO Y FINALIZACIÓN</b>", header_style))
-    elements.append(Spacer(1, 5))
+    elements.append(Spacer(1, 4))
 
-    # Tabla de usos
     if registros_equipo:
         data_tabla = [["#", "Acción", "Fecha y Hora (CDMX)"]]
         for idx, r in enumerate(registros_equipo, start=1):
@@ -251,7 +420,7 @@ def generar_pdf_equipo(equipo_info, registros_equipo):
         ]))
         elements.append(t_registros)
     else:
-        elements.append(Paragraph("<i>No hay eventos de inicio o final registrados para este equipo.</i>", cell_style))
+        elements.append(Paragraph("<i>No hay eventos registrados.</i>", cell_style))
 
     doc.build(elements)
     buffer.seek(0)
@@ -282,7 +451,7 @@ with col1_4:
 st.write("")
 
 # ==========================================
-# FILA 2: LABORATORIOS | 502 | 503 | ... | 🏠 | ➕
+# FILA 2: LABORATORIOS | 502 | ... | 🏠 | ➕
 # ==========================================
 labs_menu = labs_lista + ["INICIO", "MAS"]
 cols_f2 = st.columns([2] + [1] * (len(labs_menu)))
@@ -312,7 +481,7 @@ for idx, lab in enumerate(labs_menu, start=1):
 st.markdown("---")
 
 # ==========================================
-# MENÚ + (REGISTRO Y CONFIGURACIÓN)
+# MENÚ MÁS (➕) - CONFIGURACIÓN Y ALTA
 # ==========================================
 if st.session_state["modo_agregar"]:
     col_m1, col_m2, col_m3 = st.columns([1, 1, 1])
@@ -331,9 +500,9 @@ if st.session_state["modo_agregar"]:
 
     st.write("")
 
-    # FORMULARIO EQUIPOS
+    # FORMULARIO ALTA DE EQUIPOS
     if st.session_state["sub_seccion_mas"] == "EQUIPOS":
-        st.markdown('<div class="section-title">REGISTRO DE EQUIPOS</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">REGISTRO DE EQUIPOS DE USO</div>', unsafe_allow_html=True)
 
         c_tipo, c_num, c_marca, c_mod, c_serie, c_inv = st.columns([1.5, 1, 1.5, 1.5, 1.5, 1.5])
 
@@ -400,7 +569,7 @@ if st.session_state["modo_agregar"]:
 
     # FORMULARIO CONDICIONES AMBIENTALES
     elif st.session_state["sub_seccion_mas"] == "CONDICIONES AMBIENTALES":
-        st.markdown('<div class="section-title">CONDICIONES AMBIENTALES</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">CONFIGURACIÓN DE CONDICIONES AMBIENTALES</div>', unsafe_allow_html=True)
         ca_tipo, ca_rangos, ca_inst, ca_corr = st.columns([1.2, 1.2, 2, 3.5])
 
         with ca_tipo:
@@ -425,11 +594,11 @@ if st.session_state["modo_agregar"]:
         with ca_corr:
             st.write("**CORRECCIÓN (TABLA DE VALORES)**")
             if st.session_state["sel_tipo_amb"] == "%H":
-                rangos_h = ["10 - 20", "20.1 - 30", "30.1 - 40", "40.1 - 50", "50.1 - 60", "60.1 - 70", "70.1 - 80", "80.1 - 100", "N/A"]
-                df_corr = pd.DataFrame({"Rango %H": rangos_h, "Corrección": [""] * len(rangos_h)})
+                rangos_h = ["10 - 20", "20.1 - 30", "30.1 - 40", "40.1 - 50", "50.1 - 60", "60.1 - 70", "70.1 - 80", "80.1 - 100"]
+                df_corr = pd.DataFrame({"Rango": rangos_h, "Corrección": [0.0] * len(rangos_h)})
             else:
-                rangos_t = ["10 - 15", "15.1 - 20", "20.1 - 25", "25.1 - 30", "30.1 - 35", "N/A"]
-                df_corr = pd.DataFrame({"Rango TEMP (°C)": rangos_t, "Corrección": [""] * len(rangos_t)})
+                rangos_t = ["10 - 15", "15.1 - 20", "20.1 - 25", "25.1 - 30", "30.1 - 35"]
+                df_corr = pd.DataFrame({"Rango": rangos_t, "Corrección": [0.0] * len(rangos_t)})
 
             tabla_corr_amb = st.data_editor(df_corr, hide_index=True, use_container_width=True, key="editor_corr_amb")
 
@@ -463,7 +632,7 @@ if st.session_state["modo_agregar"]:
 
     # FORMULARIO CONDICIONES DE EQUIPOS
     elif st.session_state["sub_seccion_mas"] == "CONDICIONES DE EQUIPOS":
-        st.markdown('<div class="section-title">CONDICIONES DE EQUIPOS</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">CONFIGURACIÓN DE CONDICIONES DE EQUIPOS</div>', unsafe_allow_html=True)
         ce_tipo, ce_datos, ce_corr = st.columns([1.2, 3.5, 3.5])
 
         with ce_tipo:
@@ -491,15 +660,15 @@ if st.session_state["modo_agregar"]:
             st.write("**CORRECCIÓN (TABLA DE VALORES)**")
             tipo_actual = st.session_state["sel_tipo_ce"]
             if tipo_actual == "CONG":
-                r_list = ["-25 a -20", "-19.9 a -15", "-14.9 a -10", "N/A"]
+                r_list = ["-25 a -20", "-19.9 a -15", "-14.9 a -10"]
             elif tipo_actual == "REFR":
-                r_list = ["2 a 5", "5.1 a 8", "8.1 a 10", "N/A"]
+                r_list = ["2 a 5", "5.1 a 8", "8.1 a 10"]
             elif tipo_actual == "1CO2":
-                r_list = ["36.0 a 37.5 °C", "4.5% a 5.5% CO2", "N/A"]
+                r_list = ["36.0 a 37.5", "4.5 a 5.5"]
             else:
-                r_list = ["-85 a -80", "-79.9 a -70", "-69.9 a -60", "N/A"]
+                r_list = ["-85 a -80", "-79.9 a -70", "-69.9 a -60"]
 
-            df_ce_corr = pd.DataFrame({"Rango": r_list, "Corrección": [""] * len(r_list)})
+            df_ce_corr = pd.DataFrame({"Rango": r_list, "Corrección": [0.0] * len(r_list)})
             tabla_ce_corr = st.data_editor(df_ce_corr, hide_index=True, use_container_width=True, key="editor_ce_corr")
 
         st.write("")
@@ -518,6 +687,7 @@ if st.session_state["modo_agregar"]:
         st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
         if st.button("HECHO", key="btn_hecho_cond_equipos"):
             reg_ce = {
+                "id_ce": f"{st.session_state['sel_tipo_ce']}-{ce_num}_{st.session_state['sel_ubicacion_lab']}",
                 "Fecha_Hora": obtener_hora_cdmx(),
                 "Tipo_Equipo": st.session_state["sel_tipo_ce"],
                 "Numero": ce_num,
@@ -538,7 +708,7 @@ if st.session_state["modo_agregar"]:
 elif st.session_state["lab_seleccionado"] is not None:
     lab_actual = st.session_state["lab_seleccionado"]
 
-    # Fila 3: Menú propio del laboratorio seleccionado
+    # FILA 3: MENÚ DEL LABORATORIO SELECCIONADO
     col3_1, col3_2, col3_3 = st.columns([1, 1, 1])
 
     with col3_1:
@@ -567,8 +737,6 @@ elif st.session_state["lab_seleccionado"] is not None:
     # SECCIÓN 1: USO DE EQUIPOS
     if st.session_state["sub_seccion_lab"] == "USO DE EQUIPOS":
         st.markdown(f'<div class="section-title">EQUIPOS DISPONIBLES EN LABORATORIO {lab_actual}</div>', unsafe_allow_html=True)
-
-        # Filtrar solo equipos de este laboratorio
         equipos_lab = [e for e in st.session_state["inventario_equipos"] if e.get("Ubicacion_Lab") == lab_actual]
 
         if not equipos_lab:
@@ -587,7 +755,6 @@ elif st.session_state["lab_seleccionado"] is not None:
                         st.session_state["equipo_activo_id"] = eq["id"]
                         st.rerun()
 
-            # SI HAY UN EQUIPO SELECCIONADO: MOSTRAR INICIO / FINAL Y PDF
             if st.session_state["equipo_activo_id"]:
                 eq_sel = next((item for item in equipos_lab if item["id"] == st.session_state["equipo_activo_id"]), None)
 
@@ -619,7 +786,6 @@ elif st.session_state["lab_seleccionado"] is not None:
                             st.toast("🔴 Finalización registrada correctamente")
                             st.rerun()
 
-                    # Historial del equipo activo
                     st.write("")
                     st.write("**Historial de Actividad del Equipo:**")
                     reg_filtrados = [r for r in st.session_state["registros_uso"] if r["equipo_id"] == eq_sel["id"]]
@@ -630,7 +796,6 @@ elif st.session_state["lab_seleccionado"] is not None:
                     else:
                         st.info("Sin registros de uso aún para este equipo.")
 
-                    # Botón para descargar reporte en PDF
                     pdf_bytes = generar_pdf_equipo(eq_sel, reg_filtrados)
                     st.download_button(
                         label="📄 DESCARGAR REPORTE EN PDF (BITÁCORA Y DATOS DE EQUIPO)",
@@ -640,23 +805,150 @@ elif st.session_state["lab_seleccionado"] is not None:
                         key=f"btn_pdf_{eq_sel['id']}"
                     )
 
-    # SECCIÓN 2: CONDICIONES AMBIENTALES DEL LAB
+    # SECCIÓN 2: CONDICIONES AMBIENTALES (LÓGICA + INTERFAZ DE DIAGRAMA)
     elif st.session_state["sub_seccion_lab"] == "CONDICIONES AMBIENTALES":
         st.markdown(f'<div class="section-title">CONDICIONES AMBIENTALES - LAB {lab_actual}</div>', unsafe_allow_html=True)
-        amb_lab = [a for a in st.session_state["condiciones_ambientales_db"] if a.get("Ubicacion_Lab") == lab_actual]
-        if amb_lab:
-            st.dataframe(pd.DataFrame(amb_lab), use_container_width=True)
-        else:
-            st.info(f"No hay registros de condiciones ambientales para el Laboratorio {lab_actual}.")
 
-    # SECCIÓN 3: CONDICIONES DE EQUIPOS DEL LAB
+        cfg_temp = next((a for a in st.session_state["condiciones_ambientales_db"] if a.get("Ubicacion_Lab") == lab_actual and a.get("Tipo") == "TEMP"), None)
+        cfg_hum = next((a for a in st.session_state["condiciones_ambientales_db"] if a.get("Ubicacion_Lab") == lab_actual and a.get("Tipo") == "%H"), None)
+
+        col_amb_temp, col_amb_hum = st.columns(2)
+
+        # Entrada Temperatura
+        with col_amb_temp:
+            st.markdown("<h3 style='text-align:center; color:#0077B6;'>TEMPERATURA</h3>", unsafe_allow_html=True)
+            inp_temp = st.number_input("Ingresar Lectura (°C)", key=f"inp_temp_{lab_actual}", value=None, step=0.1)
+
+            t_corregida, factor_t = None, 0.0
+            if inp_temp is not None:
+                tabla_t = cfg_temp.get("Correcciones", []) if cfg_temp else []
+                t_corregida, factor_t = calcular_correccion_valor(inp_temp, tabla_t)
+
+            val_disp_t = f"{t_corregida} °C" if t_corregida is not None else "0.0 °C"
+            st.markdown(f'<div class="oval-corregido">Lectura Corregida: {val_disp_t} (Corr: {factor_t:+} °C)</div>', unsafe_allow_html=True)
+
+        # Entrada Humedad
+        with col_amb_hum:
+            st.markdown("<h3 style='text-align:center; color:#0077B6;'>% HUMEDAD</h3>", unsafe_allow_html=True)
+            inp_hum = st.number_input("Ingresar Lectura (%H)", key=f"inp_hum_{lab_actual}", value=None, step=0.1)
+
+            h_corregida, factor_h = None, 0.0
+            if inp_hum is not None:
+                tabla_h = cfg_hum.get("Correcciones", []) if cfg_hum else []
+                h_corregida, factor_h = calcular_correccion_valor(inp_hum, tabla_h)
+
+            val_disp_h = f"{h_corregida} %" if h_corregida is not None else "0.0 %"
+            st.markdown(f'<div class="oval-corregido">Lectura Corregida: {val_disp_h} (Corr: {factor_h:+} %)</div>', unsafe_allow_html=True)
+
+        st.write("")
+        st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
+
+        # Generación de PDF al pulsar HECHO
+        pdf_amb_bytes = generar_pdf_condiciones_ambientales(
+            lab_actual, cfg_temp or cfg_hum, inp_temp, t_corregida, inp_hum, h_corregida
+        )
+
+        if st.download_button(
+            label="HECHO (GUARDAR Y DESCARGAR REPORTE PDF)",
+            data=pdf_amb_bytes,
+            file_name=f"Condiciones_Ambientales_Lab_{lab_actual}_{datetime.now(TZ_CDMX).strftime('%Y%m%d_%H%M')}.pdf",
+            mime="application/pdf",
+            key=f"btn_hecho_amb_pdf_{lab_actual}"
+        ):
+            st.session_state["historico_mediciones_amb"].append({
+                "Fecha_Hora": obtener_hora_cdmx(),
+                "Lab": lab_actual,
+                "Temp_Leida": inp_temp,
+                "Temp_Corr": t_corregida,
+                "Hum_Leida": inp_hum,
+                "Hum_Corr": h_corregida
+            })
+            st.toast("✅ Mediciones ambientales registradas con éxito")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # SECCIÓN 3: CONDICIONES DE EQUIPOS (MÚLTIPLES EQUIPOS + ICO2 DUAL)
     elif st.session_state["sub_seccion_lab"] == "CONDICIONES DE EQUIPOS":
         st.markdown(f'<div class="section-title">CONDICIONES DE EQUIPOS - LAB {lab_actual}</div>', unsafe_allow_html=True)
-        ce_lab = [c for c in st.session_state["condiciones_equipos_db"] if c.get("Ubicacion_Lab") == lab_actual]
-        if ce_lab:
-            st.dataframe(pd.DataFrame(ce_lab), use_container_width=True)
+
+        equipos_ce_lab = [c for c in st.session_state["condiciones_equipos_db"] if c.get("Ubicacion_Lab") == lab_actual]
+
+        if not equipos_ce_lab:
+            st.info(f"No hay equipos de temperatura/CO2 configurados en el Laboratorio {lab_actual}. Regístralos en el menú ➕ (MAS) > CONDICIONES DE EQUIPOS.")
         else:
-            st.info(f"No hay registros de condiciones de equipos para el Laboratorio {lab_actual}.")
+            cols_ce_grid = st.columns(min(len(equipos_ce_lab), 4))
+            mediciones_resumen = []
+
+            for idx_ce, eq_ce in enumerate(equipos_ce_lab):
+                col_curr = cols_ce_grid[idx_ce % 4]
+
+                with col_curr:
+                    titulo_eq = f"{eq_ce['Tipo_Equipo']}-{eq_ce['Numero']}"
+                    st.markdown(f"<div style='border: 1px solid #0077B6; border-radius: 4px; padding: 4px; text-align: center; font-weight: bold; background-color: #F0F8FF; color: #0077B6; margin-bottom: 5px;'>{titulo_eq}</div>", unsafe_allow_html=True)
+
+                    # Entrada de Lectura Principal (Temperatura)
+                    val_leido = st.number_input(
+                        f"Lectura Temp",
+                        key=f"ce_val_{eq_ce['id_ce']}",
+                        value=None,
+                        step=0.1
+                    )
+
+                    val_corr, f_corr = None, 0.0
+                    if val_leido is not None:
+                        val_corr, f_corr = calcular_correccion_valor(val_leido, eq_ce.get("Correcciones", []))
+
+                    v_text = f"{val_corr} °C" if val_corr is not None else "0.0 °C"
+                    st.markdown(f'<div class="oval-corregido">{v_text}</div>', unsafe_allow_html=True)
+
+                    if val_leido is not None:
+                        mediciones_resumen.append({
+                            "Parametro": f"{titulo_eq} (Temp)",
+                            "Lectura": f"{val_leido} °C",
+                            "Corregida": f"{val_corr} °C"
+                        })
+
+                    # Si el equipo es Incubadora 1CO2, mostrar campo secundario de % CO2
+                    if eq_ce["Tipo_Equipo"] == "1CO2":
+                        val_co2 = st.number_input(
+                            f"Lectura % CO2",
+                            key=f"ce_co2_{eq_ce['id_ce']}",
+                            value=None,
+                            step=0.1
+                        )
+
+                        val_co2_corr, f_co2_corr = None, 0.0
+                        if val_co2 is not None:
+                            val_co2_corr, f_co2_corr = calcular_correccion_valor(val_co2, eq_ce.get("Correcciones", []))
+
+                        v_co2_text = f"{val_co2_corr} %" if val_co2_corr is not None else "0.0 %"
+                        st.markdown(f'<div class="oval-corregido">{v_co2_text}</div>', unsafe_allow_html=True)
+
+                        if val_co2 is not None:
+                            mediciones_resumen.append({
+                                "Parametro": f"{titulo_eq} (% CO2)",
+                                "Lectura": f"{val_co2} %",
+                                "Corregida": f"{val_co2_corr} %"
+                            })
+
+            st.write("")
+            st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
+
+            pdf_ce_bytes = generar_pdf_condiciones_equipos(lab_actual, equipos_ce_lab[0], mediciones_resumen)
+
+            if st.download_button(
+                label="HECHO (GUARDAR Y DESCARGAR REPORTE PDF)",
+                data=pdf_ce_bytes,
+                file_name=f"Condicion_Equipos_Lab_{lab_actual}_{datetime.now(TZ_CDMX).strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                key=f"btn_hecho_ce_pdf_{lab_actual}"
+            ):
+                st.session_state["historico_mediciones_eq"].append({
+                    "Fecha_Hora": obtener_hora_cdmx(),
+                    "Lab": lab_actual,
+                    "Mediciones": mediciones_resumen
+                })
+                st.toast("✅ Condición de equipos registrada exitosamente")
+            st.markdown("</div>", unsafe_allow_html=True)
 
 else:
-    st.info("👈 Selecciona un laboratorio de la barra superior o pulsa ➕ para registrar un nuevo equipo.")
+    st.info("👈 Selecciona un laboratorio de la barra superior o pulsa ➕ para registrar un nuevo equipo o sus condiciones.")
