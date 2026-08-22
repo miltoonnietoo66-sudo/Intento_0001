@@ -139,6 +139,13 @@ if "sub_seccion_lab" not in st.session_state:
 if "equipo_activo_id" not in st.session_state:
     st.session_state["equipo_activo_id"] = None
 
+# Guardado temporal de PDFs listos para descarga opcional
+if "pdf_amb_listo" not in st.session_state:
+    st.session_state["pdf_amb_listo"] = None
+
+if "pdf_ce_listo" not in st.session_state:
+    st.session_state["pdf_ce_listo"] = None
+
 # Formularios del menú MAS (+)
 if "sel_tipo_equipo" not in st.session_state:
     st.session_state["sel_tipo_equipo"] = "GABS"
@@ -805,7 +812,7 @@ elif st.session_state["lab_seleccionado"] is not None:
                         key=f"btn_pdf_{eq_sel['id']}"
                     )
 
-    # SECCIÓN 2: CONDICIONES AMBIENTALES (LÓGICA + INTERFAZ DE DIAGRAMA)
+    # SECCIÓN 2: CONDICIONES AMBIENTALES
     elif st.session_state["sub_seccion_lab"] == "CONDICIONES AMBIENTALES":
         st.markdown(f'<div class="section-title">CONDICIONES AMBIENTALES - LAB {lab_actual}</div>', unsafe_allow_html=True)
 
@@ -843,18 +850,8 @@ elif st.session_state["lab_seleccionado"] is not None:
         st.write("")
         st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
 
-        # Generación de PDF al pulsar HECHO
-        pdf_amb_bytes = generar_pdf_condiciones_ambientales(
-            lab_actual, cfg_temp or cfg_hum, inp_temp, t_corregida, inp_hum, h_corregida
-        )
-
-        if st.download_button(
-            label="HECHO (GUARDAR Y DESCARGAR REPORTE PDF)",
-            data=pdf_amb_bytes,
-            file_name=f"Condiciones_Ambientales_Lab_{lab_actual}_{datetime.now(TZ_CDMX).strftime('%Y%m%d_%H%M')}.pdf",
-            mime="application/pdf",
-            key=f"btn_hecho_amb_pdf_{lab_actual}"
-        ):
+        # BOTÓN HECHO: Solo guarda en el historial y prepara el PDF en sesión
+        if st.button("HECHO", key=f"btn_hecho_amb_{lab_actual}"):
             st.session_state["historico_mediciones_amb"].append({
                 "Fecha_Hora": obtener_hora_cdmx(),
                 "Lab": lab_actual,
@@ -863,10 +860,30 @@ elif st.session_state["lab_seleccionado"] is not None:
                 "Hum_Leida": inp_hum,
                 "Hum_Corr": h_corregida
             })
-            st.toast("✅ Mediciones ambientales registradas con éxito")
+            # Pre-generar PDF para su descarga opcional
+            pdf_amb_bytes = generar_pdf_condiciones_ambientales(
+                lab_actual, cfg_temp or cfg_hum, inp_temp, t_corregida, inp_hum, h_corregida
+            )
+            st.session_state["pdf_amb_listo"] = {
+                "bytes": pdf_amb_bytes,
+                "nombre": f"Condiciones_Ambientales_Lab_{lab_actual}_{datetime.now(TZ_CDMX).strftime('%Y%m%d_%H%M')}.pdf"
+            }
+            st.success("✅ Registro guardado con éxito.")
+
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # SECCIÓN 3: CONDICIONES DE EQUIPOS (MÚLTIPLES EQUIPOS + ICO2 DUAL)
+        # BOTÓN OPCIONAL DE DESCARGA PDF (Aparece únicamente si hay un registro guardado)
+        if st.session_state["pdf_amb_listo"]:
+            st.write("")
+            st.download_button(
+                label="📄 DESCARGAR REPORTE EN PDF",
+                data=st.session_state["pdf_amb_listo"]["bytes"],
+                file_name=st.session_state["pdf_amb_listo"]["nombre"],
+                mime="application/pdf",
+                key=f"btn_descarga_pdf_amb_{lab_actual}"
+            )
+
+    # SECCIÓN 3: CONDICIONES DE EQUIPOS
     elif st.session_state["sub_seccion_lab"] == "CONDICIONES DE EQUIPOS":
         st.markdown(f'<div class="section-title">CONDICIONES DE EQUIPOS - LAB {lab_actual}</div>', unsafe_allow_html=True)
 
@@ -933,22 +950,33 @@ elif st.session_state["lab_seleccionado"] is not None:
             st.write("")
             st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
 
-            pdf_ce_bytes = generar_pdf_condiciones_equipos(lab_actual, equipos_ce_lab[0], mediciones_resumen)
-
-            if st.download_button(
-                label="HECHO (GUARDAR Y DESCARGAR REPORTE PDF)",
-                data=pdf_ce_bytes,
-                file_name=f"Condicion_Equipos_Lab_{lab_actual}_{datetime.now(TZ_CDMX).strftime('%Y%m%d_%H%M')}.pdf",
-                mime="application/pdf",
-                key=f"btn_hecho_ce_pdf_{lab_actual}"
-            ):
+            # BOTÓN HECHO: Guarda los datos en el historial y habilita la descarga del PDF opcional
+            if st.button("HECHO", key=f"btn_hecho_ce_{lab_actual}"):
                 st.session_state["historico_mediciones_eq"].append({
                     "Fecha_Hora": obtener_hora_cdmx(),
                     "Lab": lab_actual,
                     "Mediciones": mediciones_resumen
                 })
-                st.toast("✅ Condición de equipos registrada exitosamente")
+                # Generar PDF en sesión
+                pdf_ce_bytes = generar_pdf_condiciones_equipos(lab_actual, equipos_ce_lab[0], mediciones_resumen)
+                st.session_state["pdf_ce_listo"] = {
+                    "bytes": pdf_ce_bytes,
+                    "nombre": f"Condicion_Equipos_Lab_{lab_actual}_{datetime.now(TZ_CDMX).strftime('%Y%m%d_%H%M')}.pdf"
+                }
+                st.success("✅ Condición de equipos registrada con éxito.")
+
             st.markdown("</div>", unsafe_allow_html=True)
+
+            # BOTÓN OPCIONAL DE DESCARGA PDF (Aparece únicamente si hay un registro guardado)
+            if st.session_state["pdf_ce_listo"]:
+                st.write("")
+                st.download_button(
+                    label="📄 DESCARGAR REPORTE EN PDF",
+                    data=st.session_state["pdf_ce_listo"]["bytes"],
+                    file_name=st.session_state["pdf_ce_listo"]["nombre"],
+                    mime="application/pdf",
+                    key=f"btn_descarga_pdf_ce_{lab_actual}"
+                )
 
 else:
     st.info("👈 Selecciona un laboratorio de la barra superior o pulsa ➕ para registrar un nuevo equipo o sus condiciones.")
