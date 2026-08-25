@@ -134,13 +134,11 @@ st.markdown(
         max-width: 100% !important;
     }
     
-    /* FILA 1: MARCO SUPERIOR */
     .marco-superior {
         height: 15px;
         width: 100%;
     }
 
-    /* FILA 2: BANNER AZUL CON TÍTULO */
     .banner-azul {
         background-color: #0077B6;
         color: #FFFFFF;
@@ -300,10 +298,10 @@ def generar_pdf_generico(titulo_reporte, df_datos):
         name='TitleStyle',
         parent=styles['Heading1'],
         fontName='Helvetica-Bold',
-        fontSize=14,
+        fontSize=13,
         textColor=colors.HexColor("#0077B6"),
         alignment=1,
-        spaceAfter=15
+        spaceAfter=12
     )
     
     elements = []
@@ -338,18 +336,6 @@ def cargar_equipos(lab=None):
         df = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab,))
     else:
         df = pd.read_sql_query("SELECT * FROM equipos", conn)
-    conn.close()
-    return df.to_dict(orient="records")
-
-def cargar_todas_config_ambientales():
-    conn = obtener_conexion()
-    df = pd.read_sql_query("SELECT * FROM config_ambientales", conn)
-    conn.close()
-    return df.to_dict(orient="records")
-
-def cargar_todas_config_condiciones_equipos():
-    conn = obtener_conexion()
-    df = pd.read_sql_query("SELECT * FROM config_condiciones_equipos", conn)
     conn.close()
     return df.to_dict(orient="records")
 
@@ -443,7 +429,7 @@ st.markdown('<div class="marco-superior"></div>', unsafe_allow_html=True)
 st.markdown('<div class="banner-azul">LABORATORIO DE INMUNOBIOLOGÍA DE LA TUBERCULOSIS</div>', unsafe_allow_html=True)
 
 # ==========================================
-# FILA 3: MENÚ DE NAVEGACIÓN Y RELOJ (REEMPLAZO DE LA FLECHA NARANJA)
+# FILA 3: MENÚ PRINCIPAL Y RELOJ
 # ==========================================
 col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns([1.5, 1.5, 1.5, 1.5, 3])
 
@@ -481,30 +467,85 @@ with col_m5:
 st.write("")
 
 # ==========================================
-# SECCIÓN: REPORTES (DESCARGA DE PDF POR LAB)
+# FILA 4: BARRA DE NAVEGACIÓN DE LABORATORIOS (GLOBAL)
+# ==========================================
+labs_menu = labs_lista + ["INICIO", "MAS", "MENOS"]
+cols_f2 = st.columns([2] + [1] * (len(labs_menu)))
+
+with cols_f2[0]:
+    st.markdown('<div class="label-box">LABS</div>', unsafe_allow_html=True)
+
+for idx, lab in enumerate(labs_menu, start=1):
+    with cols_f2[idx]:
+        if lab == "INICIO":
+            etiqueta = "🏠"
+        elif lab == "MAS":
+            etiqueta = "➕"
+        elif lab == "MENOS":
+            etiqueta = "➖"
+        else:
+            etiqueta = lab
+
+        # Resaltar laboratorio si está seleccionado
+        if st.session_state["lab_seleccionado"] == lab and not st.session_state["modo_agregar"] and not st.session_state["modo_eliminar"]:
+            aplicar_estilo_seleccion(f"btn_f2_{lab}")
+
+        if st.button(etiqueta, key=f"btn_f2_{lab}"):
+            if lab == "INICIO":
+                st.session_state["lab_seleccionado"] = None
+                st.session_state["modo_agregar"] = False
+                st.session_state["modo_eliminar"] = False
+                st.session_state["equipo_activo_id"] = None
+            elif lab == "MAS":
+                st.session_state["modo_agregar"] = True
+                st.session_state["modo_eliminar"] = False
+                st.session_state["lab_seleccionado"] = None
+                st.session_state["sub_seccion_mas"] = "EQUIPOS"
+            elif lab == "MENOS":
+                st.session_state["modo_eliminar"] = True
+                st.session_state["modo_agregar"] = False
+                st.session_state["lab_seleccionado"] = None
+                st.session_state["sub_seccion_menos"] = "EQUIPOS"
+                st.session_state["item_editar_id"] = None
+            else:
+                st.session_state["lab_seleccionado"] = lab
+                st.session_state["modo_agregar"] = False
+                st.session_state["modo_eliminar"] = False
+                st.session_state["sub_seccion_lab"] = "USO DE EQUIPOS"
+                st.session_state["equipo_activo_id"] = None
+            st.rerun()
+
+st.markdown("---")
+
+# ==========================================
+# SECCIÓN: REPORTES (PDF POR LAB SELECCIONADO)
 # ==========================================
 if st.session_state["menu_principal"] == "REPORTES":
-    st.markdown('<div class="section-title">CENTRO DE DESCARGA DE REPORTES PDF</div>', unsafe_allow_html=True)
+    lab_act = st.session_state["lab_seleccionado"]
     
-    conn = obtener_conexion()
-    
-    for l_code in labs_lista:
-        equipos_registrados = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(l_code,)).to_dict(orient="records")
-        amb_registrados = pd.read_sql_query("SELECT * FROM config_ambientales WHERE ubicacion_lab = ?", conn, params=(l_code,)).to_dict(orient="records")
-        ce_registrados = pd.read_sql_query("SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(l_code,)).to_dict(orient="records")
+    if lab_act is None or st.session_state["modo_agregar"] or st.session_state["modo_eliminar"]:
+        st.info("👈 Por favor, selecciona un laboratorio de la barra superior para ver y descargar sus reportes en PDF.")
+    else:
+        st.markdown(f'<div class="section-title">DESCARGA DE REPORTES PDF - LABORATORIO {lab_act}</div>', unsafe_allow_html=True)
+        conn = obtener_conexion()
         
-        if equipos_registrados or amb_registrados or ce_registrados:
-            st.write(f"### 📍 LABORATORIO {l_code}")
+        equipos_registrados = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
+        amb_registrados = pd.read_sql_query("SELECT * FROM config_ambientales WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
+        ce_registrados = pd.read_sql_query("SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
+        
+        if not equipos_registrados and not amb_registrados and not ce_registrados:
+            st.warning(f"No hay registros guardados ni reportes disponibles para el Laboratorio {lab_act}.")
+        else:
             cols_rep = st.columns(4)
             c_idx = 0
             
-            # Botones para Equipos de Uso
+            # PDF de Equipos de Uso
             for eq in equipos_registrados:
                 eq_id = eq["id"]
-                nombre_btn = f"PDF: {eq['tipo']}-{eq['numero']}"
+                nombre_btn = f"PDF: USO {eq['tipo']}-{eq['numero']}"
                 with cols_rep[c_idx % 4]:
                     df_uso = pd.read_sql_query("SELECT accion as Acción, fecha_hora_cdmx as Fecha_Hora FROM registros_uso WHERE equipo_id = ?", conn, params=(eq_id,))
-                    pdf_bytes = generar_pdf_generico(f"REPORTE DE USO - EQUIPO {eq['tipo']}-{eq['numero']} (LAB {l_code})", df_uso)
+                    pdf_bytes = generar_pdf_generico(f"REPORTE DE USO - EQUIPO {eq['tipo']}-{eq['numero']} (LAB {lab_act})", df_uso)
                     st.download_button(
                         label=nombre_btn,
                         data=pdf_bytes,
@@ -514,27 +555,27 @@ if st.session_state["menu_principal"] == "REPORTES":
                     )
                 c_idx += 1
                 
-            # Botones para Condiciones Ambientales
+            # PDF de Condiciones Ambientales
             if amb_registrados:
                 with cols_rep[c_idx % 4]:
-                    df_amb = pd.read_sql_query("SELECT fecha_hora as Fecha, temp_corr as Temp_°C, hum_corr as Humedad_% FROM mediciones_ambientales WHERE lab = ?", conn, params=(l_code,))
-                    pdf_bytes_amb = generar_pdf_generico(f"REPORTE DE CONDICIONES AMBIENTALES (LAB {l_code})", df_amb)
+                    df_amb = pd.read_sql_query("SELECT fecha_hora as Fecha, temp_corr as Temp_°C, hum_corr as Humedad_% FROM mediciones_ambientales WHERE lab = ?", conn, params=(lab_act,))
+                    pdf_bytes_amb = generar_pdf_generico(f"REPORTE DE CONDICIONES AMBIENTALES (LAB {lab_act})", df_amb)
                     st.download_button(
                         label=f"PDF: COND. AMBIENTALES",
                         data=pdf_bytes_amb,
-                        file_name=f"Reporte_Ambiental_Lab_{l_code}.pdf",
+                        file_name=f"Reporte_Ambiental_Lab_{lab_act}.pdf",
                         mime="application/pdf",
-                        key=f"dl_amb_{l_code}"
+                        key=f"dl_amb_{lab_act}"
                     )
                 c_idx += 1
 
-            # Botones para Condiciones de Equipos
+            # PDF de Condiciones de Equipos
             for ce in ce_registrados:
                 ce_id = ce["id"]
-                nombre_ce_btn = f"PDF: {ce['tipo_equipo']}-{ce['numero']}"
+                nombre_ce_btn = f"PDF: TEMP {ce['tipo_equipo']}-{ce['numero']}"
                 with cols_rep[c_idx % 4]:
-                    df_ce = pd.read_sql_query("SELECT fecha_hora as Fecha, parametro as Parámetro, corregida as Lectura_Corregida FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?", conn, params=(l_code, f"%{ce['tipo_equipo']}-{ce['numero']}%"))
-                    pdf_bytes_ce = generar_pdf_generico(f"REPORTE DE TEMPERATURA - {ce['tipo_equipo']}-{ce['numero']} (LAB {l_code})", df_ce)
+                    df_ce = pd.read_sql_query("SELECT fecha_hora as Fecha, parametro as Parámetro, corregida as Lectura_Corregida FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?", conn, params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%"))
+                    pdf_bytes_ce = generar_pdf_generico(f"REPORTE DE TEMPERATURA - {ce['tipo_equipo']}-{ce['numero']} (LAB {lab_act})", df_ce)
                     st.download_button(
                         label=nombre_ce_btn,
                         data=pdf_bytes_ce,
@@ -543,12 +584,11 @@ if st.session_state["menu_principal"] == "REPORTES":
                         key=f"dl_ce_{ce_id}"
                     )
                 c_idx += 1
-            st.markdown("---")
-            
-    conn.close()
+                
+        conn.close()
 
 # ==========================================
-# SECCIÓN: VERIFICAR Y USUARIO (PROXIMAMENTE)
+# SECCIÓN: VERIFICAR Y USUARIO
 # ==========================================
 elif st.session_state["menu_principal"] == "VERIFICAR":
     st.info("🔍 Módulo de VERIFICACIÓN: Espacio reservado para auditorías y revisión de bitácoras completas.")
@@ -557,54 +597,10 @@ elif st.session_state["menu_principal"] == "USUARIO":
     st.info("👤 Módulo de USUARIO: Gestión de sesiones, firmas digitales e identificadores del personal.")
 
 # ==========================================
-# SECCIÓN: REGISTRAR (INTERFAZ DE LABORATORIOS ORIGINAL)
+# SECCIÓN: REGISTRAR
 # ==========================================
 elif st.session_state["menu_principal"] == "REGISTRAR":
     
-    # FILA 4: BARRA DE NAVEGACIÓN DE LABORATORIOS
-    labs_menu = labs_lista + ["INICIO", "MAS", "MENOS"]
-    cols_f2 = st.columns([2] + [1] * (len(labs_menu)))
-
-    with cols_f2[0]:
-        st.markdown('<div class="label-box">LABS</div>', unsafe_allow_html=True)
-
-    for idx, lab in enumerate(labs_menu, start=1):
-        with cols_f2[idx]:
-            if lab == "INICIO":
-                etiqueta = "🏠"
-            elif lab == "MAS":
-                etiqueta = "➕"
-            elif lab == "MENOS":
-                etiqueta = "➖"
-            else:
-                etiqueta = lab
-
-            if st.button(etiqueta, key=f"btn_f2_{lab}"):
-                if lab == "INICIO":
-                    st.session_state["lab_seleccionado"] = None
-                    st.session_state["modo_agregar"] = False
-                    st.session_state["modo_eliminar"] = False
-                    st.session_state["equipo_activo_id"] = None
-                elif lab == "MAS":
-                    st.session_state["modo_agregar"] = True
-                    st.session_state["modo_eliminar"] = False
-                    st.session_state["lab_seleccionado"] = None
-                    st.session_state["sub_seccion_mas"] = "EQUIPOS"
-                elif lab == "MENOS":
-                    st.session_state["modo_eliminar"] = True
-                    st.session_state["modo_agregar"] = False
-                    st.session_state["lab_seleccionado"] = None
-                    st.session_state["sub_seccion_menos"] = "EQUIPOS"
-                    st.session_state["item_editar_id"] = None
-                else:
-                    st.session_state["lab_seleccionado"] = lab
-                    st.session_state["modo_agregar"] = False
-                    st.session_state["modo_eliminar"] = False
-                    st.session_state["sub_seccion_lab"] = "USO DE EQUIPOS"
-                    st.session_state["equipo_activo_id"] = None
-
-    st.markdown("---")
-
     # SUBMÓDULO ➕ (MÁS)
     if st.session_state["modo_agregar"]:
         col_m1, col_m2, col_m3 = st.columns([1, 1, 1])
@@ -892,7 +888,7 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                             st.rerun()
                         st.markdown('</div>', unsafe_allow_html=True)
 
-    # VISTA INDIVIDUAL DE LABORATORIOS
+    # VISTA INDIVIDUAL DE LABORATORIOS (REGISTRO DE MEDICIONES / USO)
     elif st.session_state["lab_seleccionado"] is not None:
         lab_actual = st.session_state["lab_seleccionado"]
 
@@ -1061,4 +1057,4 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                 st.markdown("</div>", unsafe_allow_html=True)
 
     else:
-        st.info("👈 Selecciona un laboratorio de la barra inferior, presiona ➕ para dar de alta o ➖ para editar/eliminar registros.")
+        st.info("👈 Selecciona un laboratorio de la barra superior, presiona ➕ para dar de alta o ➖ para editar/eliminar registros.")
