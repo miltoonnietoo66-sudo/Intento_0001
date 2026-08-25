@@ -1,317 +1,595 @@
-data=pdf_bytes_amb,
-                        file_name=f"Reporte_Ambiental_Lab_{lab_act}.pdf",
-                        mime="application/pdf",
-                        key=f"dl_amb_{lab_act}"
-                    )
+import io
+import sqlite3
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import pandas as pd
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+import streamlit as st
 
-        # --- 3. REPORTES DE CONDICIONES DE EQUIPOS ---
-        elif cat_act == "CONDICIONES DE EQUIPOS":
-            cond_registradas = pd.read_sql_query(
-                "SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", 
-                conn, 
-                params=(lab_act,)
-            ).to_dict(orient="records")
-            
-            if not cond_registradas:
-                st.warning(f"No hay equipos de monitoreo configurados en el Lab {lab_act}.")
+# 1. CONFIGURACIÓN DE PÁGINA
+st.set_page_config(
+    page_title="Sistema INER - Gestión de Laboratorios", 
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+TZ_CDMX = ZoneInfo("America/Mexico_City")
+DB_NAME = "laboratorio_iner.db"
+
+# 2. BASE DE DATOS SQLITE
+def obtener_conexion():
+    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def inicializar_bd():
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS equipos (
+            id TEXT PRIMARY KEY,
+            fecha_hora TEXT,
+            tipo TEXT,
+            numero TEXT,
+            marca TEXT,
+            modelo TEXT,
+            serie TEXT,
+            inventario TEXT,
+            ubicacion_lab TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS registros_uso (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            equipo_id TEXT,
+            accion TEXT,
+            fecha_hora_cdmx TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS config_ambientales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha_hora TEXT,
+            tipo TEXT,
+            val_min TEXT,
+            val_max TEXT,
+            instrumento TEXT,
+            ubicacion_lab TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS config_condiciones_equipos (
+            id TEXT PRIMARY KEY,
+            fecha_hora TEXT,
+            tipo_equipo TEXT,
+            numero TEXT,
+            marca TEXT,
+            modelo TEXT,
+            serie TEXT,
+            inventario TEXT,
+            ubicacion_lab TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS correcciones_rangos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entidad_id TEXT,
+            rango TEXT,
+            correccion REAL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS mediciones_ambientales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha_hora TEXT,
+            lab TEXT,
+            temp_leida REAL,
+            temp_corr REAL,
+            hum_leida REAL,
+            hum_corr REAL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS mediciones_equipos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha_hora TEXT,
+            lab TEXT,
+            parametro TEXT,
+            lectura TEXT,
+            corregida TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+inicializar_bd()
+
+# 3. CSS RESPONSIVO Y ESTILOS
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #FFFFFF;
+        background-image: url('https://www.gob.mx/cms/uploads/action_program/main_image/26915/iner.jpg');
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+        background-position: center;
+        background-size: min(80vw, 420px);
+    }
+    .stApp::before {
+        content: "";
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background-color: rgba(255, 255, 255, 0.92);
+        z-index: -1;
+    }
+    .block-container {
+        padding-top: 0.5rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        max-width: 100% !important;
+    }
+    
+    .marco-superior {
+        height: 15px;
+        width: 100%;
+    }
+
+    .banner-azul {
+        background-color: #0077B6;
+        color: #FFFFFF;
+        font-weight: bold;
+        text-align: center;
+        padding: 0.6rem 1rem;
+        border-radius: 6px;
+        font-size: clamp(1rem, 2.2vw, 1.4rem);
+        letter-spacing: 1px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    }
+
+    .label-box {
+        border: 2px solid #0077B6;
+        background-color: #FFFFFF;
+        color: #0077B6;
+        font-weight: bold;
+        text-align: center;
+        padding: 0.4rem;
+        border-radius: 6px;
+        min-height: 2.8rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: clamp(0.85rem, 2vw, 1rem);
+    }
+    .reloj-box {
+        border: 2px solid #0077B6;
+        background-color: #F0F8FF;
+        color: #0077B6;
+        font-weight: bold;
+        text-align: center;
+        padding: 0.4rem;
+        border-radius: 6px;
+        min-height: 2.8rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: clamp(0.75rem, 1.6vw, 0.9rem);
+    }
+    div[data-testid="stButton"] > button {
+        color: #0077B6 !important;
+        font-weight: bold !important;
+        background-color: #FFFFFF !important;
+        border: 2px solid #0077B6 !important;
+        border-radius: 6px !important;
+        width: 100% !important;
+        min-height: 2.8rem !important;
+        font-size: clamp(0.8rem, 1.8vw, 1rem) !important;
+        padding: 0.2rem 0.5rem !important;
+        transition: all 0.2s ease-in-out;
+    }
+    div[data-testid="stButton"] > button:hover {
+        background-color: #F0F8FF !important;
+        border-color: #023E8A !important;
+    }
+    .btn-hecho div[data-testid="stButton"] > button {
+        background-color: #2A9D8F !important;
+        color: #FFFFFF !important;
+        border: 2px solid #2A9D8F !important;
+        font-size: clamp(0.95rem, 2vw, 1.15rem) !important;
+    }
+    .btn-hecho div[data-testid="stButton"] > button:hover {
+        background-color: #218377 !important;
+    }
+    .btn-eliminar div[data-testid="stButton"] > button {
+        background-color: #E63946 !important;
+        color: #FFFFFF !important;
+        border: 2px solid #E63946 !important;
+        font-size: clamp(0.95rem, 2vw, 1.15rem) !important;
+    }
+    .btn-eliminar div[data-testid="stButton"] > button:hover {
+        background-color: #C52A36 !important;
+    }
+    .section-title {
+        color: #0077B6;
+        font-weight: bold;
+        text-align: center;
+        border-bottom: 2px solid #0077B6;
+        padding-bottom: 5px;
+        margin-bottom: 15px;
+        font-size: clamp(1.1rem, 2.5vw, 1.4rem);
+    }
+    .oval-corregido {
+        border: 2px solid #F4A261;
+        background-color: #FFF3E0;
+        color: #E76F51;
+        font-weight: bold;
+        text-align: center;
+        padding: 0.5rem;
+        border-radius: 20px;
+        margin-top: 5px;
+        margin-bottom: 15px;
+        font-size: clamp(0.85rem, 1.8vw, 0.95rem);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# 4. INICIALIZACIÓN DE VARIABLES DE ESTADO
+if "menu_principal" not in st.session_state:
+    st.session_state["menu_principal"] = "REGISTRAR"
+if "lab_seleccionado" not in st.session_state:
+    st.session_state["lab_seleccionado"] = None
+if "sub_categoria" not in st.session_state:
+    st.session_state["sub_categoria"] = "EQUIPOS"
+if "modo_agregar" not in st.session_state:
+    st.session_state["modo_agregar"] = False
+if "modo_eliminar" not in st.session_state:
+    st.session_state["modo_eliminar"] = False
+if "equipo_activo_id" not in st.session_state:
+    st.session_state["equipo_activo_id"] = None
+if "item_editar_id" not in st.session_state:
+    st.session_state["item_editar_id"] = None
+
+if "sel_tipo_equipo" not in st.session_state:
+    st.session_state["sel_tipo_equipo"] = "GABS"
+if "sel_ubicacion_lab" not in st.session_state:
+    st.session_state["sel_ubicacion_lab"] = "502"
+if "sel_tipo_amb" not in st.session_state:
+    st.session_state["sel_tipo_amb"] = "TEMP"
+if "sel_tipo_ce" not in st.session_state:
+    st.session_state["sel_tipo_ce"] = "CONG"
+
+labs_lista = ["502", "503", "504", "506", "507", "508", "510", "513", "514"]
+
+# 5. FUNCIONES AUXILIARES Y GENERACIÓN DE PDF
+def obtener_hora_cdmx():
+    return datetime.now(TZ_CDMX).strftime("%d/%m/%Y %H:%M:%S")
+
+def aplicar_estilo_seleccion(llave_css):
+    st.markdown(
+        f"""
+        <style>
+        div[data-testid="stButton"] > button[key="{llave_css}"] {{
+            background-color: #2A9D8F !important;
+            color: #FFFFFF !important;
+            border: 2px solid #2A9D8F !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def generar_pdf_generico(titulo_reporte, df_datos):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    styles = getSampleStyleSheet()
+    
+    style_title = ParagraphStyle(
+        name='TitleStyle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=13,
+        textColor=colors.HexColor("#0077B6"),
+        alignment=1,
+        spaceAfter=12
+    )
+    
+    elements = []
+    elements.append(Paragraph("INSTITUTO NACIONAL DE ENFERMEDADES RESPIRATORIAS (INER)", style_title))
+    elements.append(Paragraph("LABORATORIO DE INMUNOBIOLOGÍA DE LA TUBERCULOSIS", style_title))
+    elements.append(Paragraph(titulo_reporte, style_title))
+    elements.append(Spacer(1, 10))
+    
+    if not df_datos.empty:
+        tabla_data = [df_datos.columns.tolist()] + df_datos.values.tolist()
+        t = Table(tabla_data)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0077B6")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CCCCCC")),
+        ]))
+        elements.append(t)
+    else:
+        elements.append(Paragraph("No hay registros disponibles para este reporte.", styles['Normal']))
+        
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def cargar_equipos(lab=None):
+    conn = obtener_conexion()
+    if lab:
+        df = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab,))
+    else:
+        df = pd.read_sql_query("SELECT * FROM equipos", conn)
+    conn.close()
+    return df.to_dict(orient="records")
+
+def cargar_correcciones_df(entidad_id):
+    conn = obtener_conexion()
+    df = pd.read_sql_query("SELECT rango as Rango, correccion as Corrección FROM correcciones_rangos WHERE entidad_id = ?", conn, params=(entidad_id,))
+    conn.close()
+    return df
+
+def calcular_correccion_valor(valor_leido, tabla_correcciones, columna_rango="Rango"):
+    if valor_leido is None:
+        return None, 0.0
+
+    for reg in tabla_correcciones:
+        rango_str = str(reg.get(columna_rango, ""))
+        corr_val = reg.get("Corrección", 0)
+
+        try:
+            factor_corr = float(corr_val) if corr_val != "" else 0.0
+        except ValueError:
+            factor_corr = 0.0
+
+        partes = rango_str.split("a") if "a" in rango_str else rango_str.split("-")
+        if len(partes) == 2:
+            try:
+                min_r = float(partes[0].replace("°C", "").replace("%", "").strip())
+                max_r = float(partes[1].replace("°C", "").replace("%", "").strip())
+                if min_r <= valor_leido <= max_r:
+                    return round(valor_leido + factor_corr, 2), factor_corr
+            except ValueError:
+                continue
+
+    return round(valor_leido, 2), 0.0
+
+def cargar_registros_uso(equipo_id):
+    conn = obtener_conexion()
+    df = pd.read_sql_query("SELECT accion as Acción, fecha_hora_cdmx as FechaHora_CDMX FROM registros_uso WHERE equipo_id = ? ORDER BY id ASC", conn, params=(equipo_id,))
+    conn.close()
+    return df.to_dict(orient="records")
+
+def cargar_condicion_ambiental_config(lab, tipo):
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM config_ambientales WHERE ubicacion_lab = ? AND tipo = ? ORDER BY id DESC LIMIT 1", (lab, tipo))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        cfg = dict(row)
+        entidad_id = f"AMB_{lab}_{tipo}"
+        corr_df = cargar_correcciones_df(entidad_id)
+        return {
+            "Fecha_Hora": cfg["fecha_hora"],
+            "Tipo": cfg["tipo"],
+            "Min": cfg["val_min"],
+            "Max": cfg["val_max"],
+            "Instrumento": cfg["instrumento"],
+            "Correcciones": corr_df.to_dict(orient="records"),
+            "Ubicacion_Lab": cfg["ubicacion_lab"]
+        }
+    return None
+
+def cargar_condiciones_equipos_db(lab):
+    conn = obtener_conexion()
+    df = pd.read_sql_query("SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab,))
+    conn.close()
+    res = []
+    for _, r in df.iterrows():
+        corr_df = cargar_correcciones_df(r["id"])
+        res.append({
+            "id_ce": r["id"],
+            "Fecha_Hora": r["fecha_hora"],
+            "Tipo_Equipo": r["tipo_equipo"],
+            "Numero": r["numero"],
+            "Marca": r["marca"],
+            "Modelo": r["modelo"],
+            "Serie": r["serie"],
+            "Inventario": r["inventario"],
+            "Correcciones": corr_df.to_dict(orient="records"),
+            "Ubicacion_Lab": r["ubicacion_lab"]
+        })
+    return res
+
+# ==========================================
+# FILA 1: MARCO SUPERIOR
+# ==========================================
+st.markdown('<div class="marco-superior"></div>', unsafe_allow_html=True)
+
+# ==========================================
+# FILA 2: BANNER AZUL INSTITUCIONAL
+# ==========================================
+st.markdown('<div class="banner-azul">LABORATORIO DE INMUNOBIOLOGÍA DE LA TUBERCULOSIS</div>', unsafe_allow_html=True)
+
+# ==========================================
+# FILA 3: MENÚ PRINCIPAL Y RELOJ
+# ==========================================
+col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns([1.5, 1.5, 1.5, 1.5, 3])
+
+with col_m1:
+    if st.session_state["menu_principal"] == "REPORTES":
+        aplicar_estilo_seleccion("btn_menu_reportes")
+    if st.button("REPORTES", key="btn_menu_reportes"):
+        st.session_state["menu_principal"] = "REPORTES"
+        st.rerun()
+
+with col_m2:
+    if st.session_state["menu_principal"] == "REGISTRAR":
+        aplicar_estilo_seleccion("btn_menu_registrar")
+    if st.button("REGISTRAR", key="btn_menu_registrar"):
+        st.session_state["menu_principal"] = "REGISTRAR"
+        st.rerun()
+
+with col_m3:
+    if st.session_state["menu_principal"] == "VERIFICAR":
+        aplicar_estilo_seleccion("btn_menu_verificar")
+    if st.button("VERIFICAR", key="btn_menu_verificar"):
+        st.session_state["menu_principal"] = "VERIFICAR"
+        st.rerun()
+
+with col_m4:
+    if st.session_state["menu_principal"] == "USUARIO":
+        aplicar_estilo_seleccion("btn_menu_usuario")
+    if st.button("USUARIO", key="btn_menu_usuario"):
+        st.session_state["menu_principal"] = "USUARIO"
+        st.rerun()
+
+with col_m5:
+    st.markdown(f'<div class="reloj-box">🕒 CDMX: {obtener_hora_cdmx()}</div>', unsafe_allow_html=True)
+
+st.write("")
+
+# ==========================================
+# FILA 4: BARRA DE NAVEGACIÓN DE LABORATORIOS (GLOBAL)
+# ==========================================
+labs_menu = labs_lista + ["INICIO", "MAS", "MENOS"]
+cols_f2 = st.columns([2] + [1] * (len(labs_menu)))
+
+with cols_f2[0]:
+    st.markdown('<div class="label-box">LABS</div>', unsafe_allow_html=True)
+
+for idx, lab in enumerate(labs_menu, start=1):
+    with cols_f2[idx]:
+        if lab == "INICIO":
+            etiqueta = "🏠"
+        elif lab == "MAS":
+            etiqueta = "➕"
+        elif lab == "MENOS":
+            etiqueta = "➖"
+        else:
+            etiqueta = lab
+
+        if st.session_state["lab_seleccionado"] == lab and not st.session_state["modo_agregar"] and not st.session_state["modo_eliminar"]:
+            aplicar_estilo_seleccion(f"btn_f2_{lab}")
+
+        if st.button(etiqueta, key=f"btn_f2_{lab}"):
+            if lab == "INICIO":
+                st.session_state["lab_seleccionado"] = None
+                st.session_state["modo_agregar"] = False
+                st.session_state["modo_eliminar"] = False
+                st.session_state["equipo_activo_id"] = None
+            elif lab == "MAS":
+                st.session_state["modo_agregar"] = True
+                st.session_state["modo_eliminar"] = False
+                st.session_state["lab_seleccionado"] = None
+            elif lab == "MENOS":
+                st.session_state["modo_eliminar"] = True
+                st.session_state["modo_agregar"] = False
+                st.session_state["lab_seleccionado"] = None
+                st.session_state["item_editar_id"] = None
             else:
-                for cond in cond_registradas:
-                    cond_id = cond["id"]
-                    nombre_btn = f"📄 PDF: {cond['tipo']}-{cond['numero']}"
-                    
-                    meta_cond = {
-                        "Equipo Monitoreado": f"{cond['tipo']} - {cond['numero']}",
-                        "Rango Permitido": f"{cond['val_min']} a {cond['val_max']} {cond['unidad']}",
-                        "Instrumento / Sensor": cond['instrumento'],
-                        "Ubicación": f"Laboratorio {cond['ubicacion_lab']}",
-                        "Fecha de Configuración": cond['fecha_hora']
-                    }
-                    
-                    with cols_rep[c_idx % 4]:
-                        df_med_ce = pd.read_sql_query(
-                            'SELECT fecha_hora as "Fecha y Hora", lectura_corr as "Lectura Corregida" FROM mediciones_cond_equipos WHERE config_id = ?', 
-                            conn, 
-                            params=(cond_id,)
-                        )
-                        pdf_bytes_ce = generar_pdf_generico(
-                            f"MONITOREO DE CONDICIONES - {cond['tipo']}-{cond['numero']}", 
-                            df_med_ce, 
-                            metadata=meta_cond
-                        )
-                        st.download_button(
-                            label=nombre_btn,
-                            data=pdf_bytes_ce,
-                            file_name=f"Reporte_Condicion_{cond_id}.pdf",
-                            mime="application/pdf",
-                            key=f"dl_ce_{cond_id}"
-                        )
-                    c_idx += 1
-        conn.close()
+                st.session_state["lab_seleccionado"] = lab
+                st.session_state["modo_agregar"] = False
+                st.session_state["modo_eliminar"] = False
+                st.session_state["equipo_activo_id"] = None
+            st.rerun()
 
 # ==========================================
-# SECCIÓN: REGISTRAR (CAPTURA DE DATOS)
+# FILA 5: TRES BOTONES DE RUBROS (GLOBAL)
 # ==========================================
-elif st.session_state["menu_principal"] == "REGISTRAR":
+col_cat1, col_cat2, col_cat3 = st.columns([1, 1, 1])
+
+with col_cat1:
+    if st.session_state["sub_categoria"] == "EQUIPOS":
+        aplicar_estilo_seleccion("btn_cat_equipos")
+    if st.button("EQUIPOS", key="btn_cat_equipos"):
+        st.session_state["sub_categoria"] = "EQUIPOS"
+        st.session_state["item_editar_id"] = None
+        st.rerun()
+
+with col_cat2:
+    if st.session_state["sub_categoria"] == "CONDICIONES AMBIENTALES":
+        aplicar_estilo_seleccion("btn_cat_amb")
+    if st.button("CONDICIONES AMBIENTALES", key="btn_cat_amb"):
+        st.session_state["sub_categoria"] = "CONDICIONES AMBIENTALES"
+        st.session_state["item_editar_id"] = None
+        st.rerun()
+
+with col_cat3:
+    if st.session_state["sub_categoria"] == "CONDICIONES DE EQUIPOS":
+        aplicar_estilo_seleccion("btn_cat_ce")
+    if st.button("CONDICIONES DE EQUIPOS", key="btn_cat_ce"):
+        st.session_state["sub_categoria"] = "CONDICIONES DE EQUIPOS"
+        st.session_state["item_editar_id"] = None
+        st.rerun()
+
+st.markdown("---")
+
+# ==========================================
+# SECCIÓN: REPORTES (CORREGIDO)
+# ==========================================
+if st.session_state["menu_principal"] == "REPORTES":
     lab_act = st.session_state["lab_seleccionado"]
     cat_act = st.session_state["sub_categoria"]
     
-    # --- MODO AGREGAR (+) ---
-    if st.session_state["modo_agregar"]:
-        if lab_act is None:
-            st.error("Por favor selecciona un laboratorio arriba antes de guardar el nuevo elemento.")
-        else:
-            st.markdown(f'<div class="section-title">NUEVO REGISTRO EN {cat_act} (LAB {lab_act})</div>', unsafe_allow_html=True)
-            
-            if cat_act == "EQUIPOS":
-                with st.form("form_alta_equipo"):
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        tipo_eq = st.text_input("Tipo de Equipo (ej. Centrífuga, Incubadora)")
-                        num_eq = st.text_input("Número / Identificador")
-                        marca_eq = st.text_input("Marca")
-                    with c2:
-                        mod_eq = st.text_input("Modelo")
-                        ser_eq = st.text_input("N° de Serie")
-                        inv_eq = st.text_input("N° de Inventario INER")
-                    
-                    btn_guardar_eq = st.form_submit_button("Guardar Equipo")
-                    if btn_guardar_eq:
-                        if tipo_eq and num_eq:
-                            conn = obtener_conexion()
-                            c = conn.cursor()
-                            c.execute('''
-                                INSERT INTO equipos (tipo, numero, marca, modelo, serie, inventario, ubicacion_lab, fecha_hora)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (tipo_eq, num_eq, marca_eq, mod_eq, ser_eq, inv_eq, lab_act, obtener_hora_cdmx()))
-                            conn.commit()
-                            conn.close()
-                            st.success(f"Equipo {tipo_eq}-{num_eq} guardado exitosamente.")
-                            st.session_state["modo_agregar"] = False
-                            st.rerun()
-                        else:
-                            st.error("Los campos 'Tipo' y 'Número' son obligatorios.")
-
-            elif cat_act == "CONDICIONES AMBIENTALES":
-                with st.form("form_alta_amb"):
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        tipo_amb = st.selectbox("Tipo de Medición", ["Temperatura y Humedad Ambiental"])
-                        inst_amb = st.text_input("Instrumento / Termohigrómetro")
-                    with c2:
-                        min_amb = st.number_input("Valor Mínimo (°C)", value=18.0)
-                        max_amb = st.number_input("Valor Máximo (°C)", value=25.0)
-                    
-                    btn_guardar_amb = st.form_submit_button("Guardar Configuración Ambiental")
-                    if btn_guardar_amb:
-                        conn = obtener_conexion()
-                        c = conn.cursor()
-                        c.execute('''
-                            INSERT INTO config_ambientales (tipo, val_min, val_max, instrumento, ubicacion_lab, fecha_hora)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        ''', (tipo_amb, min_amb, max_amb, inst_amb, lab_act, obtener_hora_cdmx()))
-                        conn.commit()
-                        conn.close()
-                        st.success("Configuración ambiental guardada correctamente.")
-                        st.session_state["modo_agregar"] = False
-                        st.rerun()
-
-            elif cat_act == "CONDICIONES DE EQUIPOS":
-                with st.form("form_alta_ce"):
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        tipo_ce = st.text_input("Tipo de Equipo Monitoreado (ej. Ultracongelador)")
-                        num_ce = st.text_input("Número / ID")
-                        inst_ce = st.text_input("Sensor / Termómetro Asignado")
-                    with c2:
-                        min_ce = st.number_input("Límite Mínimo Permisible", value=-80.0)
-                        max_ce = st.number_input("Límite Máximo Permisible", value=-70.0)
-                        uni_ce = st.text_input("Unidad de Medida", value="°C")
-                    
-                    btn_guardar_ce = st.form_submit_button("Guardar Parámetro de Equipo")
-                    if btn_guardar_ce:
-                        if tipo_ce and num_ce:
-                            conn = obtener_conexion()
-                            c = conn.cursor()
-                            c.execute('''
-                                INSERT INTO config_condiciones_equipos (tipo, numero, val_min, val_max, unidad, instrumento, ubicacion_lab, fecha_hora)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (tipo_ce, num_ce, min_ce, max_ce, uni_ce, inst_ce, lab_act, obtener_hora_cdmx()))
-                            conn.commit()
-                            conn.close()
-                            st.success(f"Monitoreo para {tipo_ce}-{num_ce} guardado.")
-                            st.session_state["modo_agregar"] = False
-                            st.rerun()
-                        else:
-                            st.error("Los campos 'Tipo' y 'Número' son obligatorios.")
-
-    # --- MODO ELIMINAR (➖) ---
-    elif st.session_state["modo_eliminar"]:
-        if lab_act is None:
-            st.error("Selecciona un laboratorio arriba para gestionar la eliminación de registros.")
-        else:
-            st.markdown(f'<div class="section-title">GESTIÓN Y ELIMINACIÓN EN {cat_act} (LAB {lab_act})</div>', unsafe_allow_html=True)
-            conn = obtener_conexion()
-            
-            if cat_act == "EQUIPOS":
-                df_eq_del = pd.read_sql_query("SELECT id, tipo, numero, marca, modelo, serie FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,))
-                if df_eq_del.empty:
-                    st.info("No hay equipos configurados en este laboratorio.")
-                else:
-                    for _, row in df_eq_del.iterrows():
-                        c1, c2 = st.columns([4, 1])
-                        with c1:
-                            st.write(f"**{row['tipo']} - {row['numero']}** | Marca: {row['marca']} | Serie: {row['serie']}")
-                        with c2:
-                            if st.button("❌ Eliminar", key=f"del_eq_{row['id']}"):
-                                c = conn.cursor()
-                                c.execute("DELETE FROM equipos WHERE id = ?", (row['id'],))
-                                c.execute("DELETE FROM registros_uso WHERE equipo_id = ?", (row['id'],))
-                                conn.commit()
-                                st.success("Equipo eliminado.")
-                                st.rerun()
-
-            elif cat_act == "CONDICIONES AMBIENTALES":
-                df_amb_del = pd.read_sql_query("SELECT id, tipo, val_min, val_max, instrumento FROM config_ambientales WHERE ubicacion_lab = ?", conn, params=(lab_act,))
-                if df_amb_del.empty:
-                    st.info("No hay parámetros ambientales configurados en este laboratorio.")
-                else:
-                    for _, row in df_amb_del.iterrows():
-                        c1, c2 = st.columns([4, 1])
-                        with c1:
-                            st.write(f"**{row['tipo']}** | Rango: {row['val_min']} a {row['val_max']} °C | Sensor: {row['instrumento']}")
-                        with c2:
-                            if st.button("❌ Eliminar", key=f"del_amb_{row['id']}"):
-                                c = conn.cursor()
-                                c.execute("DELETE FROM config_ambientales WHERE id = ?", (row['id'],))
-                                conn.commit()
-                                st.success("Configuración eliminada.")
-                                st.rerun()
-
-            elif cat_act == "CONDICIONES DE EQUIPOS":
-                df_ce_del = pd.read_sql_query("SELECT id, tipo, numero, val_min, val_max, unidad FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,))
-                if df_ce_del.empty:
-                    st.info("No hay monitoreos de condiciones de equipos configurados en este laboratorio.")
-                else:
-                    for _, row in df_ce_del.iterrows():
-                        c1, c2 = st.columns([4, 1])
-                        with c1:
-                            st.write(f"**{row['tipo']} - {row['numero']}** | Rango: {row['val_min']} a {row['val_max']} {row['unidad']}")
-                        with c2:
-                            if st.button("❌ Eliminar", key=f"del_ce_{row['id']}"):
-                                c = conn.cursor()
-                                c.execute("DELETE FROM config_condiciones_equipos WHERE id = ?", (row['id'],))
-                                c.execute("DELETE FROM mediciones_cond_equipos WHERE config_id = ?", (row['id'],))
-                                conn.commit()
-                                st.success("Monitoreo eliminado.")
-                                st.rerun()
-            conn.close()
-
-    # --- NAVEGACIÓN NORMAL POR LABORATORIOS ---
+    if lab_act is None or st.session_state["modo_agregar"] or st.session_state["modo_eliminar"]:
+        st.info("👈 Selecciona un laboratorio en la barra superior para descargar reportes en PDF.")
     else:
-        if lab_act is None:
-            st.info("👈 Selecciona un laboratorio de la lista superior o usa (+) para agregar uno nuevo.")
-        else:
-            conn = obtener_conexion()
-            
-            if cat_act == "EQUIPOS":
-                st.markdown(f'<div class="section-title">REGISTRO DE USO DE EQUIPOS - LAB {lab_act}</div>', unsafe_allow_html=True)
-                df_eq = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,))
-                
-                if df_eq.empty:
-                    st.warning("No hay equipos registrados en este laboratorio. Presiona (+) para agregar uno.")
-                else:
-                    cols_eq_btns = st.columns(4)
-                    for idx, row in df_eq.iterrows():
-                        with cols_eq_btns[idx % 4]:
-                            if st.button(f"⚙️ {row['tipo']}-{row['numero']}", key=f"btn_eq_act_{row['id']}"):
-                                st.session_state["equipo_activo_id"] = row['id']
-                    
-                    if st.session_state["equipo_activo_id"]:
-                        eq_sel = df_eq[df_eq['id'] == st.session_state["equipo_activo_id"]].iloc[0]
-                        st.markdown(f"### Bitácora de Registro: **{eq_sel['tipo']} - {eq_sel['numero']}**")
-                        
-                        with st.form("form_uso_equipo"):
-                            accion_uso = st.text_input("Acción / Actividad realizada", placeholder="ej. Purificación de RNA - 12,000 RPM x 15 min")
-                            btn_reg_uso = st.form_submit_button("Registrar Uso")
-                            
-                            if btn_reg_uso and accion_uso:
-                                c = conn.cursor()
-                                c.execute('''
-                                    INSERT INTO registros_uso (equipo_id, accion, fecha_hora_cdmx)
-                                    VALUES (?, ?, ?)
-                                ''', (eq_sel['id'], accion_uso, obtener_hora_cdmx()))
-                                conn.commit()
-                                st.success("Uso registrado correctamente.")
-                                st.rerun()
-                        
-                        st.markdown("#### Historial Reciente")
-                        df_hist = pd.read_sql_query("SELECT fecha_hora_cdmx as 'Fecha y Hora', accion as 'Acción' FROM registros_uso WHERE equipo_id = ? ORDER BY id DESC LIMIT 10", conn, params=(eq_sel['id'],))
-                        st.dataframe(df_hist, use_container_width=True)
+        st.markdown(f'<div class="section-title">REPORTES DE {cat_act} - LABORATORIO {lab_act}</div>', unsafe_allow_html=True)
+        conn = obtener_conexion()
+        cols_rep = st.columns(4)
+        c_idx = 0
 
-            elif cat_act == "CONDICIONES AMBIENTALES":
-                st.markdown(f'<div class="section-title">MEDICIÓN AMBIENTAL - LAB {lab_act}</div>', unsafe_allow_html=True)
-                with st.form("form_med_amb"):
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        temp_val = st.number_input("Temperatura Leída (°C)", value=21.5, step=0.1)
-                    with c2:
-                        hum_val = st.number_input("Humedad Leída (%)", value=45.0, step=0.5)
-                    
-                    btn_save_amb = st.form_submit_button("Guardar Lectura Ambiental")
-                    if btn_save_amb:
-                        c = conn.cursor()
-                        c.execute('''
-                            INSERT INTO mediciones_ambientales (lab, temp_corr, hum_corr, fecha_hora)
-                            VALUES (?, ?, ?, ?)
-                        ''', (lab_act, temp_val, hum_val, obtener_hora_cdmx()))
-                        conn.commit()
-                        st.success("Condiciones ambientales registradas.")
-                        st.rerun()
-                
-                st.markdown("#### Historial Reciente")
-                df_hist_amb = pd.read_sql_query("SELECT fecha_hora as 'Fecha y Hora', temp_corr as 'Temp (°C)', hum_corr as 'Humedad (%)' FROM mediciones_ambientales WHERE lab = ? ORDER BY id DESC LIMIT 10", conn, params=(lab_act,))
-                st.dataframe(df_hist_amb, use_container_width=True)
+        if cat_act == "EQUIPOS":
+            equipos_registrados = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
+            if not equipos_registrados:
+                st.warning(f"No hay equipos de uso registrados en el Lab {lab_act}.")
+            else:
+                for eq in equipos_registrados:
+                    eq_id = eq["id"]
+                    nombre_btn = f"📄 PDF: USO {eq['tipo']}-{eq['numero']}"
+                    with cols_rep[c_idx % 4]:
+                        df_uso = pd.read_sql_query('SELECT accion as "Acción", fecha_hora_cdmx as "Fecha y Hora" FROM registros_uso WHERE equipo_id = ?', conn, params=(eq_id,))
+                        pdf_bytes = generar_pdf_generico(f"REPORTE DE USO - EQUIPO {eq['tipo']}-{eq['numero']} (LAB {lab_act})", df_uso)
+                        st.download_button(
+                            label=nombre_btn,
+                            data=pdf_bytes,
+                            file_name=f"Reporte_Uso_{eq_id}.pdf",
+                            mime="application/pdf",
+                            key=f"dl_eq_{eq_id}"
+                        )
+                    c_idx += 1
 
-            elif cat_act == "CONDICIONES DE EQUIPOS":
-                st.markdown(f'<div class="section-title">MONITOREO DE CONDICIONES DE EQUIPOS - LAB {lab_act}</div>', unsafe_allow_html=True)
-                df_ce = pd.read_sql_query("SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,))
-                
-                if df_ce.empty:
-                    st.warning("No hay equipos configurados para monitoreo de condiciones en este laboratorio.")
-                else:
-                    for _, row in df_ce.iterrows():
-                        with st.expander(f"❄️ / 🎛️ {row['tipo']} - {row['numero']} (Rango: {row['val_min']} a {row['val_max']} {row['unidad']})"):
-                            with st.form(f"form_ce_{row['id']}"):
-                                lect = st.number_input(f"Lectura Actual ({row['unidad']})", key=f"inp_ce_{row['id']}")
-                                btn_save_ce = st.form_submit_button("Guardar Lectura")
-                                
-                                if btn_save_ce:
-                                    c = conn.cursor()
-                                    c.execute('''
-                                        INSERT INTO mediciones_cond_equipos (config_id, lectura_corr, fecha_hora)
-                                        VALUES (?, ?, ?)
-                                    ''', (row['id'], lect, obtener_hora_cdmx()))
-                                    conn.commit()
-                                    st.success("Lectura guardada correctamente.")
-                                    st.rerun()
-                            
-                            df_hist_ce = pd.read_sql_query("SELECT fecha_hora as 'Fecha y Hora', lectura_corr as 'Lectura' FROM mediciones_cond_equipos WHERE config_id = ? ORDER BY id DESC LIMIT 5", conn, params=(row['id'],))
-                            st.dataframe(df_hist_ce, use_container_width=True)
-            conn.close()
-
-# ==========================================
-# SECCIÓN: VERIFICAR Y USUARIO
-# ==========================================
-elif st.session_state["menu_principal"] in ["VERIFICAR", "USUARIO"]:
-    st.markdown(f'<div class="section-title">MÓDULO DE {st.session_state["menu_principal"]}</div>', unsafe_allow_html=True)
-    st.info(f"El módulo de **{st.session_state['menu_principal']}** se encuentra activo y disponible para firmas de validación y control de perfiles.")
-data=pdf_bytes_amb,
+        elif cat_act == "CONDICIONES AMBIENTALES":
+            amb_registrados = pd.read_sql_query("SELECT * FROM config_ambientales WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
+            if not amb_registrados:
+                st.warning(f"No hay configuraciones ambientales para el Lab {lab_act}.")
+            else:
+                with cols_rep[0]:
+                    # Alias corregidos con comillas dobles
+                    df_amb = pd.read_sql_query('SELECT fecha_hora as "Fecha y Hora", temp_corr as "Temp (°C)", hum_corr as "Humedad (%)" FROM mediciones_ambientales WHERE lab = ?', conn, params=(lab_act,))
+                    pdf_bytes_amb = generar_pdf_generico(f"REPORTE DE CONDICIONES AMBIENTALES (LAB {lab_act})", df_amb)
+                    st.download_button(
+                        label=f"📄 PDF: CONDICIONES AMBIENTALES",
+                        data=pdf_bytes_amb,
                         file_name=f"Reporte_Ambiental_Lab_{lab_act}.pdf",
                         mime="application/pdf",
                         key=f"dl_amb_{lab_act}"
                     )
 
-        # --- 3. REPORTES DE CONDICIONES DE EQUIPOS ---
         elif cat_act == "CONDICIONES DE EQUIPOS":
             ce_registrados = pd.read_sql_query("SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
             if not ce_registrados:
@@ -320,25 +598,9 @@ data=pdf_bytes_amb,
                 for ce in ce_registrados:
                     ce_id = ce["id"]
                     nombre_ce_btn = f"📄 PDF: TEMP {ce['tipo_equipo']}-{ce['numero']}"
-                    
-                    # Ficha técnica del equipo de monitoreo capturada en (+)
-                    meta_ce = {
-                        "Tipo Equipo": ce['tipo_equipo'],
-                        "Número": ce['numero'],
-                        "Marca": ce['marca'],
-                        "Modelo": ce['modelo'],
-                        "Serie": ce['serie'],
-                        "Inventario": ce['inventario'],
-                        "Ubicación": f"Laboratorio {ce['ubicacion_lab']}"
-                    }
-                    
                     with cols_rep[c_idx % 4]:
-                        df_ce = pd.read_sql_query(
-                            'SELECT fecha_hora as "Fecha y Hora", corregida as "Lectura Corregida" FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?', 
-                            conn, 
-                            params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%")
-                        )
-                        pdf_bytes_ce = generar_pdf_generico(f"CONTROL DE TEMPERATURA - {ce['tipo_equipo']}-{ce['numero']}", df_ce, metadata=meta_ce)
+                        df_ce = pd.read_sql_query('SELECT fecha_hora as "Fecha y Hora", parametro as "Parámetro", corregida as "Lectura Corregida" FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?', conn, params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%"))
+                        pdf_bytes_ce = generar_pdf_generico(f"REPORTE DE TEMPERATURA - {ce['tipo_equipo']}-{ce['numero']} (LAB {lab_act})", df_ce)
                         st.download_button(
                             label=nombre_ce_btn,
                             data=pdf_bytes_ce,
@@ -349,7 +611,7 @@ data=pdf_bytes_amb,
                     c_idx += 1
 
         conn.close()
-
+        
 # ==========================================
 # SECCIÓN: VERIFICAR Y USUARIO
 # ==========================================
