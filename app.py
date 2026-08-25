@@ -699,7 +699,6 @@ if st.session_state["menu_principal"] == "REPORTES":
     
     cat_act = st.session_state["sub_categoria"]
     lab_act = st.session_state["lab_seleccionado"]
-)
     
     if lab_act is None:
         st.info("👈 Por favor, selecciona un Laboratorio de la barra superior para consultar los reportes.")
