@@ -267,152 +267,135 @@ if "sel_tipo_ce" not in st.session_state:
 
 labs_lista = ["502", "503", "504", "506", "507", "508", "510", "513", "514"]
 
-# 5. FUNCIONES AUXILIARES Y GENERACIÓN DE PDF
-def obtener_hora_cdmx():
-    return datetime.now(TZ_CDMX).strftime("%d/%m/%Y %H:%M:%S")
-
-def aplicar_estilo_seleccion(llave_css):
-    st.markdown(
-        f"""
-        <style>
-        div[data-testid="stButton"] > button[key="{llave_css}"] {{
-            background-color: #2A9D8F !important;
-            color: #FFFFFF !important;
-            border: 2px solid #2A9D8F !important;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-def generar_pdf_generico(titulo_reporte, df_datos):
+# ==========================================
+# 5. FUNCIONES AUXILIARES Y GENERACIÓN DE PDF (ACTUALIZADO)
+# ==========================================
+def generar_pdf_generico(titulo_reporte, df_datos, metadata=None):
+    """
+    Genera un PDF dinámico donde el encabezado contiene los datos técnicos
+    registrados en el botón '➕' y la tabla incluye columnas para Usuario y Verificó.
+    """
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=letter, 
+        rightMargin=30, 
+        leftMargin=30, 
+        topMargin=30, 
+        bottomMargin=30
+    )
     styles = getSampleStyleSheet()
     
     style_title = ParagraphStyle(
         name='TitleStyle',
         parent=styles['Heading1'],
         fontName='Helvetica-Bold',
-        fontSize=13,
+        fontSize=12,
         textColor=colors.HexColor("#0077B6"),
         alignment=1,
-        spaceAfter=12
+        spaceAfter=10
     )
     
-    elements = []
-    elements.append(Paragraph("INSTITUTO NACIONAL DE ENFERMEDADES RESPIRATORIAS (INER)", style_title))
-    elements.append(Paragraph("LABORATORIO DE INMUNOBIOLOGÍA DE LA TUBERCULOSIS", style_title))
-    elements.append(Paragraph(titulo_reporte, style_title))
-    elements.append(Spacer(1, 10))
+    style_meta_label = ParagraphStyle(
+        name='MetaLabel',
+        fontName='Helvetica-Bold',
+        fontSize=9,
+        textColor=colors.HexColor("#023E8A")
+    )
     
+    style_meta_val = ParagraphStyle(
+        name='MetaVal',
+        fontName='Helvetica',
+        fontSize=9,
+        textColor=colors.black
+    )
+
+    style_cell = ParagraphStyle(
+        name='TableCell',
+        fontName='Helvetica',
+        fontSize=8,
+        alignment=1
+    )
+
+    elements = []
+    
+    # 1. TÍTULO DEL REPORTE
+    elements.append(Paragraph(titulo_reporte.upper(), style_title))
+    elements.append(Spacer(1, 5))
+    
+    # 2. ENCABEZADO CON LA INFORMACIÓN DEL BOTÓN (+)
+    if metadata:
+        meta_table_data = []
+        keys = list(metadata.keys())
+        # Organizar metadatos en 2 columnas
+        for i in range(0, len(keys), 2):
+            k1 = keys[i]
+            v1 = str(metadata[k1]) if metadata[k1] is not None else ""
+            
+            if i + 1 < len(keys):
+                k2 = keys[i+1]
+                v2 = str(metadata[k2]) if metadata[k2] is not None else ""
+                row = [
+                    Paragraph(f"<b>{k1}:</b>", style_meta_label),
+                    Paragraph(v1, style_meta_val),
+                    Paragraph(f"<b>{k2}:</b>", style_meta_label),
+                    Paragraph(v2, style_meta_val)
+                ]
+            else:
+                row = [
+                    Paragraph(f"<b>{k1}:</b>", style_meta_label),
+                    Paragraph(v1, style_meta_val),
+                    "", ""
+                ]
+            meta_table_data.append(row)
+            
+        t_meta = Table(meta_table_data, colWidths=[100, 170, 100, 170])
+        t_meta.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F0F8FF")),
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#0077B6")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#D0E1F9")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(t_meta)
+        elements.append(Spacer(1, 15))
+
+    # 3. TABLA DE REGISTROS CON COLUMNAS: FECHA/HORA, LECTURA, USUARIO Y VERIFICÓ
     if not df_datos.empty:
-        tabla_data = [df_datos.columns.tolist()] + df_datos.values.tolist()
-        t = Table(tabla_data)
-        t.setStyle(TableStyle([
+        # Asegurar columnas fijas para Usuario y Verificó
+        if "Usuario" not in df_datos.columns:
+            df_datos["Usuario"] = ""
+        if "Verificó" not in df_datos.columns:
+            df_datos["Verificó"] = ""
+
+        headers = df_datos.columns.tolist()
+        tabla_data = [[Paragraph(f"<b>{h}</b>", style_cell) for h in headers]]
+        
+        for _, row in df_datos.iterrows():
+            row_cells = []
+            for col in headers:
+                val = str(row[col]) if row[col] is not None else ""
+                row_cells.append(Paragraph(val, style_cell))
+            tabla_data.append(row_cells)
+
+        t_datos = Table(tabla_data, colWidths=[150, 150, 120, 120])
+        t_datos.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0077B6")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CCCCCC")),
         ]))
-        elements.append(t)
+        elements.append(t_datos)
     else:
         elements.append(Paragraph("No hay registros disponibles para este reporte.", styles['Normal']))
         
     doc.build(elements)
     buffer.seek(0)
     return buffer.getvalue()
-
-def cargar_equipos(lab=None):
-    conn = obtener_conexion()
-    if lab:
-        df = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab,))
-    else:
-        df = pd.read_sql_query("SELECT * FROM equipos", conn)
-    conn.close()
-    return df.to_dict(orient="records")
-
-def cargar_correcciones_df(entidad_id):
-    conn = obtener_conexion()
-    df = pd.read_sql_query("SELECT rango as Rango, correccion as Corrección FROM correcciones_rangos WHERE entidad_id = ?", conn, params=(entidad_id,))
-    conn.close()
-    return df
-
-def calcular_correccion_valor(valor_leido, tabla_correcciones, columna_rango="Rango"):
-    if valor_leido is None:
-        return None, 0.0
-
-    for reg in tabla_correcciones:
-        rango_str = str(reg.get(columna_rango, ""))
-        corr_val = reg.get("Corrección", 0)
-
-        try:
-            factor_corr = float(corr_val) if corr_val != "" else 0.0
-        except ValueError:
-            factor_corr = 0.0
-
-        partes = rango_str.split("a") if "a" in rango_str else rango_str.split("-")
-        if len(partes) == 2:
-            try:
-                min_r = float(partes[0].replace("°C", "").replace("%", "").strip())
-                max_r = float(partes[1].replace("°C", "").replace("%", "").strip())
-                if min_r <= valor_leido <= max_r:
-                    return round(valor_leido + factor_corr, 2), factor_corr
-            except ValueError:
-                continue
-
-    return round(valor_leido, 2), 0.0
-
-def cargar_registros_uso(equipo_id):
-    conn = obtener_conexion()
-    df = pd.read_sql_query("SELECT accion as Acción, fecha_hora_cdmx as FechaHora_CDMX FROM registros_uso WHERE equipo_id = ? ORDER BY id ASC", conn, params=(equipo_id,))
-    conn.close()
-    return df.to_dict(orient="records")
-
-def cargar_condicion_ambiental_config(lab, tipo):
-    conn = obtener_conexion()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM config_ambientales WHERE ubicacion_lab = ? AND tipo = ? ORDER BY id DESC LIMIT 1", (lab, tipo))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        cfg = dict(row)
-        entidad_id = f"AMB_{lab}_{tipo}"
-        corr_df = cargar_correcciones_df(entidad_id)
-        return {
-            "Fecha_Hora": cfg["fecha_hora"],
-            "Tipo": cfg["tipo"],
-            "Min": cfg["val_min"],
-            "Max": cfg["val_max"],
-            "Instrumento": cfg["instrumento"],
-            "Correcciones": corr_df.to_dict(orient="records"),
-            "Ubicacion_Lab": cfg["ubicacion_lab"]
-        }
-    return None
-
-def cargar_condiciones_equipos_db(lab):
-    conn = obtener_conexion()
-    df = pd.read_sql_query("SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab,))
-    conn.close()
-    res = []
-    for _, r in df.iterrows():
-        corr_df = cargar_correcciones_df(r["id"])
-        res.append({
-            "id_ce": r["id"],
-            "Fecha_Hora": r["fecha_hora"],
-            "Tipo_Equipo": r["tipo_equipo"],
-            "Numero": r["numero"],
-            "Marca": r["marca"],
-            "Modelo": r["modelo"],
-            "Serie": r["serie"],
-            "Inventario": r["inventario"],
-            "Correcciones": corr_df.to_dict(orient="records"),
-            "Ubicacion_Lab": r["ubicacion_lab"]
-        })
-    return res
 
 # ==========================================
 # FILA 1: MARCO SUPERIOR
@@ -539,7 +522,7 @@ with col_cat3:
 st.markdown("---")
 
 # ==========================================
-# SECCIÓN: REPORTES (CORREGIDO)
+# SECCIÓN: REPORTES (ACTUALIZADO CON METADATOS)
 # ==========================================
 if st.session_state["menu_principal"] == "REPORTES":
     lab_act = st.session_state["lab_seleccionado"]
@@ -553,6 +536,7 @@ if st.session_state["menu_principal"] == "REPORTES":
         cols_rep = st.columns(4)
         c_idx = 0
 
+        # --- 1. REPORTES DE EQUIPOS ---
         if cat_act == "EQUIPOS":
             equipos_registrados = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
             if not equipos_registrados:
@@ -561,9 +545,26 @@ if st.session_state["menu_principal"] == "REPORTES":
                 for eq in equipos_registrados:
                     eq_id = eq["id"]
                     nombre_btn = f"📄 PDF: USO {eq['tipo']}-{eq['numero']}"
+                    
+                    # Ficha técnica capturada en (+)
+                    meta_eq = {
+                        "Tipo de Equipo": eq['tipo'],
+                        "Número": eq['numero'],
+                        "Marca": eq['marca'],
+                        "Modelo": eq['modelo'],
+                        "N° de Serie": eq['serie'],
+                        "Inventario": eq['inventario'],
+                        "Ubicación": f"Laboratorio {eq['ubicacion_lab']}",
+                        "Fecha de Alta": eq['fecha_hora']
+                    }
+                    
                     with cols_rep[c_idx % 4]:
-                        df_uso = pd.read_sql_query('SELECT accion as "Acción", fecha_hora_cdmx as "Fecha y Hora" FROM registros_uso WHERE equipo_id = ?', conn, params=(eq_id,))
-                        pdf_bytes = generar_pdf_generico(f"REPORTE DE USO - EQUIPO {eq['tipo']}-{eq['numero']} (LAB {lab_act})", df_uso)
+                        df_uso = pd.read_sql_query(
+                            'SELECT fecha_hora_cdmx as "Fecha y Hora", accion as "Acción / Evento" FROM registros_uso WHERE equipo_id = ?', 
+                            conn, 
+                            params=(eq_id,)
+                        )
+                        pdf_bytes = generar_pdf_generico(f"BITÁCORA DE USO - EQUIPO {eq['tipo']}-{eq['numero']}", df_uso, metadata=meta_eq)
                         st.download_button(
                             label=nombre_btn,
                             data=pdf_bytes,
@@ -573,15 +574,28 @@ if st.session_state["menu_principal"] == "REPORTES":
                         )
                     c_idx += 1
 
+        # --- 2. REPORTES DE CONDICIONES AMBIENTALES ---
         elif cat_act == "CONDICIONES AMBIENTALES":
             amb_registrados = pd.read_sql_query("SELECT * FROM config_ambientales WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
             if not amb_registrados:
                 st.warning(f"No hay configuraciones ambientales para el Lab {lab_act}.")
             else:
+                # Tomar la última configuración registrada para los metadatos
+                cfg = amb_registrados[-1]
+                meta_amb = {
+                    "Tipo de Medición": cfg['tipo'],
+                    "Rango Permitido": f"{cfg['val_min']} a {cfg['val_max']}",
+                    "Instrumento": cfg['instrumento'],
+                    "Ubicación": f"Laboratorio {cfg['ubicacion_lab']}"
+                }
+                
                 with cols_rep[0]:
-                    # Alias corregidos con comillas dobles
-                    df_amb = pd.read_sql_query('SELECT fecha_hora as "Fecha y Hora", temp_corr as "Temp (°C)", hum_corr as "Humedad (%)" FROM mediciones_ambientales WHERE lab = ?', conn, params=(lab_act,))
-                    pdf_bytes_amb = generar_pdf_generico(f"REPORTE DE CONDICIONES AMBIENTALES (LAB {lab_act})", df_amb)
+                    df_amb = pd.read_sql_query(
+                        'SELECT fecha_hora as "Fecha y Hora", temp_corr as "Temp (°C)", hum_corr as "Humedad (%)" FROM mediciones_ambientales WHERE lab = ?', 
+                        conn, 
+                        params=(lab_act,)
+                    )
+                    pdf_bytes_amb = generar_pdf_generico(f"REGISTRO DE CONDICIONES AMBIENTALES - LAB {lab_act}", df_amb, metadata=meta_amb)
                     st.download_button(
                         label=f"📄 PDF: CONDICIONES AMBIENTALES",
                         data=pdf_bytes_amb,
@@ -590,6 +604,7 @@ if st.session_state["menu_principal"] == "REPORTES":
                         key=f"dl_amb_{lab_act}"
                     )
 
+        # --- 3. REPORTES DE CONDICIONES DE EQUIPOS ---
         elif cat_act == "CONDICIONES DE EQUIPOS":
             ce_registrados = pd.read_sql_query("SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
             if not ce_registrados:
@@ -598,9 +613,25 @@ if st.session_state["menu_principal"] == "REPORTES":
                 for ce in ce_registrados:
                     ce_id = ce["id"]
                     nombre_ce_btn = f"📄 PDF: TEMP {ce['tipo_equipo']}-{ce['numero']}"
+                    
+                    # Ficha técnica del equipo de monitoreo capturada en (+)
+                    meta_ce = {
+                        "Tipo Equipo": ce['tipo_equipo'],
+                        "Número": ce['numero'],
+                        "Marca": ce['marca'],
+                        "Modelo": ce['modelo'],
+                        "Serie": ce['serie'],
+                        "Inventario": ce['inventario'],
+                        "Ubicación": f"Laboratorio {ce['ubicacion_lab']}"
+                    }
+                    
                     with cols_rep[c_idx % 4]:
-                        df_ce = pd.read_sql_query('SELECT fecha_hora as "Fecha y Hora", parametro as "Parámetro", corregida as "Lectura Corregida" FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?', conn, params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%"))
-                        pdf_bytes_ce = generar_pdf_generico(f"REPORTE DE TEMPERATURA - {ce['tipo_equipo']}-{ce['numero']} (LAB {lab_act})", df_ce)
+                        df_ce = pd.read_sql_query(
+                            'SELECT fecha_hora as "Fecha y Hora", corregida as "Lectura Corregida" FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?', 
+                            conn, 
+                            params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%")
+                        )
+                        pdf_bytes_ce = generar_pdf_generico(f"CONTROL DE TEMPERATURA - {ce['tipo_equipo']}-{ce['numero']}", df_ce, metadata=meta_ce)
                         st.download_button(
                             label=nombre_ce_btn,
                             data=pdf_bytes_ce,
