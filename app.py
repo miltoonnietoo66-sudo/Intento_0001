@@ -703,6 +703,19 @@ if st.session_state["menu_principal"] == "REPORTES":
     if lab_act is None:
         st.info("👈 Por favor, selecciona un Laboratorio de la barra superior para consultar los reportes.")
     else:
+        # --- FILTRO POR RANGO DE FECHAS ---
+        st.markdown("**FILTRAR PERÍODO DEL REPORTE**")
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            fecha_inicio = st.date_input("Fecha Inicio", value=pd.to_datetime("today") - pd.Timedelta(days=30), key="rep_f_inicio")
+        with col_f2:
+            fecha_fin = st.date_input("Fecha Fin", value=pd.to_datetime("today"), key="rep_f_fin")
+
+        # Formatear fechas para la consulta SQL (YYYY-MM-DD)
+        f_inicio_str = f"{fecha_inicio} 00:00:00"
+        f_fin_str = f"{fecha_fin} 23:59:59"
+
+        st.markdown("---")
         conn = obtener_conexion()
         cols_rep = st.columns(4)
         c_idx = 0
@@ -724,14 +737,17 @@ if st.session_state["menu_principal"] == "REPORTES":
                         "Modelo": eq['modelo'],
                         "Serie": eq['serie'],
                         "Inventario": eq['inventario'],
-                        "Ubicación": f"Laboratorio {eq['ubicacion_lab']}"
+                        "Ubicación": f"Laboratorio {eq['ubicacion_lab']}",
+                        "Período": f"{fecha_inicio} al {fecha_fin}"
                     }
                     
                     with cols_rep[c_idx % 4]:
                         df_usos = pd.read_sql_query(
-                            'SELECT fecha_hora_cdmx AS "Fecha y Hora", accion AS "Lectura Corregida" FROM registros_uso WHERE equipo_id = ?', 
+                            '''SELECT fecha_hora_cdmx AS "Fecha y Hora", accion AS "Lectura Corregida" 
+                               FROM registros_uso 
+                               WHERE equipo_id = ? AND fecha_hora_cdmx BETWEEN ? AND ?''', 
                             conn, 
-                            params=(eq['id'],)
+                            params=(eq['id'], f_inicio_str, f_fin_str)
                         )
                         
                         pdf_bytes = generar_pdf_generico(f"BITÁCORA DE USO: {eq['tipo']}-{eq['numero']}", df_usos, metadata=meta_eq)
@@ -739,7 +755,7 @@ if st.session_state["menu_principal"] == "REPORTES":
                         st.download_button(
                             label=f"📄 PDF: {eq['tipo']}-{eq['numero']}",
                             data=pdf_bytes,
-                            file_name=f"Reporte_Uso_{eq['id']}.pdf",
+                            file_name=f"Reporte_Uso_{eq['id']}_{fecha_inicio}_{fecha_fin}.pdf",
                             mime="application/pdf",
                             key=f"dl_eq_{eq['id']}"
                         )
@@ -750,13 +766,16 @@ if st.session_state["menu_principal"] == "REPORTES":
             meta_amb = {
                 "Área Monitorizada": f"Laboratorio {lab_act}",
                 "Parámetros": "Temperatura y Humedad Relativa",
-                "Frecuencia de Registro": "Diaria"
+                "Frecuencia de Registro": "Diaria",
+                "Período": f"{fecha_inicio} al {fecha_fin}"
             }
             
             df_amb = pd.read_sql_query(
-                'SELECT fecha_hora AS "Fecha y Hora", ("Temp: " || temp_corr || " °C | Hum: " || hum_corr || " %") AS "Lectura Corregida" FROM mediciones_ambientales WHERE lab = ?', 
+                '''SELECT fecha_hora AS "Fecha y Hora", ("Temp: " || temp_corr || " °C | Hum: " || hum_corr || " %") AS "Lectura Corregida" 
+                   FROM mediciones_ambientales 
+                   WHERE lab = ? AND fecha_hora BETWEEN ? AND ?''', 
                 conn, 
-                params=(lab_act,)
+                params=(lab_act, f_inicio_str, f_fin_str)
             )
             
             with cols_rep[0]:
@@ -764,7 +783,7 @@ if st.session_state["menu_principal"] == "REPORTES":
                 st.download_button(
                     label=f"📄 PDF: AMBIENTAL LAB {lab_act}",
                     data=pdf_bytes_amb,
-                    file_name=f"Reporte_Ambiental_Lab_{lab_act}.pdf",
+                    file_name=f"Reporte_Ambiental_Lab_{lab_act}_{fecha_inicio}_{fecha_fin}.pdf",
                     mime="application/pdf",
                     key=f"dl_amb_{lab_act}"
                 )
@@ -786,14 +805,17 @@ if st.session_state["menu_principal"] == "REPORTES":
                         "Modelo": ce['modelo'],
                         "Serie": ce['serie'],
                         "Inventario": ce['inventario'],
-                        "Ubicación": f"Laboratorio {ce['ubicacion_lab']}"
+                        "Ubicación": f"Laboratorio {ce['ubicacion_lab']}",
+                        "Período": f"{fecha_inicio} al {fecha_fin}"
                     }
                     
                     with cols_rep[c_idx % 4]:
                         df_ce = pd.read_sql_query(
-                            'SELECT fecha_hora AS "Fecha y Hora", corregida AS "Lectura Corregida" FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?', 
+                            '''SELECT fecha_hora AS "Fecha y Hora", corregida AS "Lectura Corregida" 
+                               FROM mediciones_equipos 
+                               WHERE lab = ? AND parametro LIKE ? AND fecha_hora BETWEEN ? AND ?''', 
                             conn, 
-                            params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%")
+                            params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%", f_inicio_str, f_fin_str)
                         )
                         
                         pdf_bytes_ce = generar_pdf_generico(f"MONITOREO DE TEMPERATURA: {ce['tipo_equipo']}-{ce['numero']}", df_ce, metadata=meta_ce)
@@ -801,13 +823,14 @@ if st.session_state["menu_principal"] == "REPORTES":
                         st.download_button(
                             label=f"📄 PDF: {ce['tipo_equipo']}-{ce['numero']}",
                             data=pdf_bytes_ce,
-                            file_name=f"Reporte_Condicion_{ce['id']}.pdf",
+                            file_name=f"Reporte_Condicion_{ce['id']}_{fecha_inicio}_{fecha_fin}.pdf",
                             mime="application/pdf",
                             key=f"dl_ce_{ce['id']}"
                         )
                     c_idx += 1
 
-        conn.close()    
+        conn.close()
+
 # ==========================================
 # SECCIÓN: VERIFICAR Y USUARIO
 # ==========================================
