@@ -995,10 +995,12 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                 st.success("💾 Condición de equipo guardada correctamente.")
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # MÓDULO ➖ (EDITAR O ELIMINAR)
+   # MÓDULO ➖ (EDITAR O ELIMINAR)
     elif st.session_state["modo_eliminar"]:
         
-        # 1. ELIMINAR / EDITAR EQUIPOS
+        # ----------------------------------------------------
+        # 1. EDITAR / ELIMINAR: EQUIPOS
+        # ----------------------------------------------------
         if st.session_state["sub_categoria"] == "EQUIPOS":
             st.markdown('<div class="section-title">SELECCIONA UN EQUIPO PARA EDITAR O ELIMINAR</div>', unsafe_allow_html=True)
             todos_equipos = cargar_equipos()
@@ -1020,7 +1022,8 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                 eq_target = next((e for e in todos_equipos if e["id"] == st.session_state["item_editar_id"]), None)
                 if eq_target:
                     st.markdown("---")
-                    st.markdown(f'<div class="section-title">EDITANDO EQUIPO: {eq_target["id"]}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="section-title">EDITANDO EQUIPO DE USO: {eq_target["id"]}</div>', unsafe_allow_html=True)
+                    
                     c_tipo, c_num, c_marca, c_mod, c_serie, c_inv = st.columns([1.5, 1, 1.5, 1.5, 1.5, 1.5])
                     with c_tipo:
                         st.write("**TIPO**")
@@ -1042,7 +1045,7 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                         inv_ed = st.text_input("Inventario", value=eq_target["inventario"], key="ed_eq_inv")
 
                     st.write("")
-                    st.write("**UBICACIÓN (LABORATORIO)**")
+                    st.write("**UBICACIÓN (SELECCIONAR LABORATORIO)**")
                     lab_ed = st.selectbox("Laboratorio", labs_lista, index=labs_lista.index(eq_target["ubicacion_lab"]) if eq_target["ubicacion_lab"] in labs_lista else 0, key="ed_eq_lab")
 
                     st.write("")
@@ -1079,62 +1082,198 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                             st.rerun()
                         st.markdown('</div>', unsafe_allow_html=True)
 
-        # 2. ELIMINAR CONDICIONES AMBIENTALES
+        # ----------------------------------------------------
+        # 2. EDITAR / ELIMINAR: CONDICIONES AMBIENTALES
+        # ----------------------------------------------------
         elif st.session_state["sub_categoria"] == "CONDICIONES AMBIENTALES":
-            st.markdown('<div class="section-title">CONFIGURACIONES AMBIENTALES REGISTRADAS</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">SELECCIONA UNA CONFIGURACIÓN AMBIENTAL PARA EDITAR O ELIMINAR</div>', unsafe_allow_html=True)
             conn = obtener_conexion()
             configs_amb = pd.read_sql_query("SELECT * FROM config_ambientales", conn).to_dict(orient="records")
             conn.close()
 
             if not configs_amb:
-                st.info("No hay configuraciones ambientales registradas para eliminar.")
+                st.info("No hay configuraciones ambientales registradas.")
             else:
                 cols_grid = st.columns(4)
                 for idx, ca in enumerate(configs_amb):
                     with cols_grid[idx % 4]:
                         lbl_btn = f"{ca['tipo']} - Lab {ca['ubicacion_lab']}"
-                        btn_key = f"btn_del_amb_{ca['id']}"
-                        
-                        st.markdown('<div class="btn-eliminar">', unsafe_allow_html=True)
-                        if st.button(f"🗑️ ELIMINAR\n{lbl_btn}", key=btn_key):
+                        btn_key = f"btn_sel_amb_{ca['id']}"
+                        if st.session_state["item_editar_id"] == ca["id"]:
+                            aplicar_estilo_seleccion(btn_key)
+                        if st.button(lbl_btn, key=btn_key):
+                            st.session_state["item_editar_id"] = ca["id"]
+                            st.rerun()
+
+            if st.session_state["item_editar_id"]:
+                ca_target = next((c for c in configs_amb if c["id"] == st.session_state["item_editar_id"]), None)
+                if ca_target:
+                    st.markdown("---")
+                    st.markdown(f'<div class="section-title">EDITANDO CONFIGURACIÓN AMBIENTAL ({ca_target["tipo"]} - LAB {ca_target["ubicacion_lab"]})</div>', unsafe_allow_html=True)
+                    
+                    # Recuperar rangos actuales de la BD
+                    entidad_id = f"AMB_{ca_target['ubicacion_lab']}_{ca_target['tipo']}"
+                    conn = obtener_conexion()
+                    df_rangos_bd = pd.read_sql_query("SELECT rango AS Rango, correccion AS Corrección FROM correcciones_rangos WHERE entidad_id = ?", conn, params=(entidad_id,))
+                    conn.close()
+
+                    if df_rangos_bd.empty:
+                        rangos_default = ["10 - 20", "20.1 - 30", "30.1 - 40", "40.1 - 50", "50.1 - 60", "60.1 - 70", "70.1 - 80", "80.1 - 100"] if ca_target["tipo"] == "%H" else ["10 - 15", "15.1 - 20", "20.1 - 25", "25.1 - 30", "30.1 - 35"]
+                        df_rangos_bd = pd.DataFrame({"Rango": rangos_default, "Corrección": [0.0] * len(rangos_default)})
+
+                    ca_tipo, ca_rangos, ca_inst, ca_corr = st.columns([1.2, 1.2, 2, 3.5])
+                    with ca_tipo:
+                        st.write("**TIPO**")
+                        tipo_amb_ed = st.selectbox("Tipo", ["TEMP", "%H"], index=0 if ca_target["tipo"] == "TEMP" else 1, key="ed_ca_tipo")
+                    with ca_rangos:
+                        st.write("**RANGOS**")
+                        min_ed = st.text_input("MIN", value=str(ca_target["val_min"]), key="ed_ca_min")
+                        max_ed = st.text_input("MAX", value=str(ca_target["val_max"]), key="ed_ca_max")
+                    with ca_inst:
+                        st.write("**INSTRUMENTO MEDICIÓN**")
+                        inst_ed = st.text_area("Descripción / Código", value=str(ca_target["instrumento"]), key="ed_ca_inst")
+                    with ca_corr:
+                        st.write("**CORRECCIÓN (TABLA DE VALORES)**")
+                        tabla_corr_amb_ed = st.data_editor(df_rangos_bd, hide_index=True, use_container_width=True, key="ed_editor_corr_amb")
+
+                    st.write("")
+                    st.write("**UBICACIÓN (LABORATORIO)**")
+                    lab_amb_ed = st.selectbox("Laboratorio", labs_lista, index=labs_lista.index(ca_target["ubicacion_lab"]) if ca_target["ubicacion_lab"] in labs_lista else 0, key="ed_ca_lab")
+
+                    st.write("")
+                    col_h, col_e = st.columns(2)
+                    with col_h:
+                        st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
+                        if st.button("HECHO (GUARDAR CAMBIOS)", key="btn_save_edit_amb"):
                             conn = obtener_conexion()
                             cursor = conn.cursor()
-                            # Eliminar configuración y su tabla de rangos asociada
-                            cursor.execute("DELETE FROM config_ambientales WHERE id = ?", (ca['id'],))
-                            entidad_id = f"AMB_{ca['ubicacion_lab']}_{ca['tipo']}"
-                            cursor.execute("DELETE FROM correcciones_rangos WHERE entidad_id = ?", (entidad_id,))
+                            cursor.execute("""
+                                UPDATE config_ambientales
+                                SET tipo = ?, val_min = ?, val_max = ?, instrumento = ?, ubicacion_lab = ?
+                                WHERE id = ?
+                            """, (tipo_amb_ed, min_ed, max_ed, inst_ed, lab_amb_ed, ca_target["id"]))
+
+                            new_entidad_id = f"AMB_{lab_amb_ed}_{tipo_amb_ed}"
+                            cursor.execute("DELETE FROM correcciones_rangos WHERE entidad_id = ? OR entidad_id = ?", (entidad_id, new_entidad_id))
+                            for _, fila in tabla_corr_amb_ed.iterrows():
+                                cursor.execute("INSERT INTO correcciones_rangos (entidad_id, rango, correccion) VALUES (?, ?, ?)", (new_entidad_id, str(fila["Rango"]), float(fila["Corrección"])))
                             conn.commit()
                             conn.close()
-                            st.success(f"🗑️ Configuración ambiental {ca['tipo']} del Lab {ca['ubicacion_lab']} eliminada.")
+                            st.session_state["item_editar_id"] = None
+                            st.success("✅ Cambios en configuración ambiental guardados.")
                             st.rerun()
                         st.markdown('</div>', unsafe_allow_html=True)
 
-        # 3. ELIMINAR CONDICIONES DE EQUIPOS
+                    with col_e:
+                        st.markdown('<div class="btn-eliminar">', unsafe_allow_html=True)
+                        if st.button("ELIMINAR CONFIGURACIÓN", key="btn_del_amb"):
+                            conn = obtener_conexion()
+                            cursor = conn.cursor()
+                            cursor.execute("DELETE FROM config_ambientales WHERE id = ?", (ca_target["id"],))
+                            cursor.execute("DELETE FROM correcciones_rangos WHERE entidad_id = ?", (entidad_id,))
+                            conn.commit()
+                            conn.close()
+                            st.session_state["item_editar_id"] = None
+                            st.success("🗑️ Configuración ambiental eliminada.")
+                            st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ----------------------------------------------------
+        # 3. EDITAR / ELIMINAR: CONDICIONES DE EQUIPOS
+        # ----------------------------------------------------
         elif st.session_state["sub_categoria"] == "CONDICIONES DE EQUIPOS":
-            st.markdown('<div class="section-title">CONFIGURACIONES DE CONDICIONES DE EQUIPOS REGISTRADAS</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">SELECCIONA UN EQUIPO DE MONITOREO PARA EDITAR O ELIMINAR</div>', unsafe_allow_html=True)
             conn = obtener_conexion()
             configs_ce = pd.read_sql_query("SELECT * FROM config_condiciones_equipos", conn).to_dict(orient="records")
             conn.close()
 
             if not configs_ce:
-                st.info("No hay equipos de condiciones/monitoreo registrados para eliminar.")
+                st.info("No hay equipos de monitoreo configurados.")
             else:
                 cols_grid = st.columns(4)
                 for idx, ce in enumerate(configs_ce):
                     with cols_grid[idx % 4]:
                         lbl_btn = f"{ce['tipo_equipo']}-{ce['numero']} (Lab {ce['ubicacion_lab']})"
-                        btn_key = f"btn_del_ce_{ce['id']}"
-                        
-                        st.markdown('<div class="btn-eliminar">', unsafe_allow_html=True)
-                        if st.button(f"🗑️ ELIMINAR\n{lbl_btn}", key=btn_key):
+                        btn_key = f"btn_sel_ce_{ce['id']}"
+                        if st.session_state["item_editar_id"] == ce["id"]:
+                            aplicar_estilo_seleccion(btn_key)
+                        if st.button(lbl_btn, key=btn_key):
+                            st.session_state["item_editar_id"] = ce["id"]
+                            st.rerun()
+
+            if st.session_state["item_editar_id"]:
+                ce_target = next((c for c in configs_ce if c["id"] == st.session_state["item_editar_id"]), None)
+                if ce_target:
+                    st.markdown("---")
+                    st.markdown(f'<div class="section-title">EDITANDO EQUIPO DE MONITOREO: {ce_target["id"]}</div>', unsafe_allow_html=True)
+                    
+                    conn = obtener_conexion()
+                    df_ce_rangos_bd = pd.read_sql_query("SELECT rango AS Rango, correccion AS Corrección FROM correcciones_rangos WHERE entidad_id = ?", conn, params=(ce_target["id"],))
+                    conn.close()
+
+                    if df_ce_rangos_bd.empty:
+                        t_act = ce_target["tipo_equipo"]
+                        r_list = ["-25 a -20", "-19.9 a -15", "-14.9 a -10"] if t_act == "CONG" else (["2 a 5", "5.1 a 8", "8.1 a 10"] if t_act == "REFR" else (["36.0 a 37.5", "4.5 a 5.5"] if t_act == "1CO2" else ["-85 a -80", "-79.9 a -70", "-69.9 a -60"]))
+                        df_ce_rangos_bd = pd.DataFrame({"Rango": r_list, "Corrección": [0.0] * len(r_list)})
+
+                    ce_tipo, ce_datos, ce_corr = st.columns([1.2, 3.5, 3.5])
+                    with ce_tipo:
+                        st.write("**TIPO EQUIPO**")
+                        opts_tce = ["CONG", "REFR", "1CO2", "ULTRO"]
+                        tce_ed = st.selectbox("Tipo", opts_tce, index=opts_tce.index(ce_target["tipo_equipo"]) if ce_target["tipo_equipo"] in opts_tce else 0, key="ed_ce_tipo")
+                    with ce_datos:
+                        st.write("**DATOS TÉCNICOS**")
+                        d1, d2 = st.columns(2)
+                        with d1:
+                            ce_num_ed = st.text_input("NÚMERO", value=str(ce_target["numero"]), key="ed_ce_num")
+                            ce_marca_ed = st.text_input("MARCA", value=str(ce_target["marca"]), key="ed_ce_marca")
+                            ce_mod_ed = st.text_input("MODELO", value=str(ce_target["modelo"]), key="ed_ce_mod")
+                        with d2:
+                            ce_serie_ed = st.text_input("SERIE", value=str(ce_target["serie"]), key="ed_ce_serie")
+                            ce_inv_ed = st.text_input("INVENTARIO", value=str(ce_target["inventario"]), key="ed_ce_inv")
+                    with ce_corr:
+                        st.write("**CORRECCIÓN (TABLA DE VALORES)**")
+                        tabla_ce_corr_ed = st.data_editor(df_ce_rangos_bd, hide_index=True, use_container_width=True, key="ed_editor_ce_corr")
+
+                    st.write("")
+                    st.write("**UBICACIÓN (LABORATORIO)**")
+                    ce_lab_ed = st.selectbox("Laboratorio", labs_lista, index=labs_lista.index(ce_target["ubicacion_lab"]) if ce_target["ubicacion_lab"] in labs_lista else 0, key="ed_ce_lab")
+
+                    st.write("")
+                    col_h, col_e = st.columns(2)
+                    with col_h:
+                        st.markdown('<div class="btn-hecho">', unsafe_allow_html=True)
+                        if st.button("HECHO (GUARDAR CAMBIOS)", key="btn_save_edit_ce"):
+                            nuevo_ce_id = f"{tce_ed}-{ce_num_ed}_{ce_lab_ed}"
                             conn = obtener_conexion()
                             cursor = conn.cursor()
-                            # Eliminar la configuración del equipo y sus correcciones por rango
-                            cursor.execute("DELETE FROM config_condiciones_equipos WHERE id = ?", (ce['id'],))
-                            cursor.execute("DELETE FROM correcciones_rangos WHERE entidad_id = ?", (ce['id'],))
+                            cursor.execute("""
+                                UPDATE config_condiciones_equipos
+                                SET id = ?, tipo_equipo = ?, numero = ?, marca = ?, modelo = ?, serie = ?, inventario = ?, ubicacion_lab = ?
+                                WHERE id = ?
+                            """, (nuevo_ce_id, tce_ed, ce_num_ed, ce_marca_ed, ce_mod_ed, ce_serie_ed, ce_inv_ed, ce_lab_ed, ce_target["id"]))
+
+                            cursor.execute("DELETE FROM correcciones_rangos WHERE entidad_id = ? OR entidad_id = ?", (ce_target["id"], nuevo_ce_id))
+                            for _, fila in tabla_ce_corr_ed.iterrows():
+                                cursor.execute("INSERT INTO correcciones_rangos (entidad_id, rango, correccion) VALUES (?, ?, ?)", (nuevo_ce_id, str(fila["Rango"]), float(fila["Corrección"])))
                             conn.commit()
                             conn.close()
-                            st.success(f"🗑️ Equipo de monitoreo {ce['tipo_equipo']}-{ce['numero']} eliminado.")
+                            st.session_state["item_editar_id"] = None
+                            st.success("✅ Cambios guardados correctamente.")
+                            st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+                    with col_e:
+                        st.markdown('<div class="btn-eliminar">', unsafe_allow_html=True)
+                        if st.button("ELIMINAR CONFIGURACIÓN", key="btn_del_ce"):
+                            conn = obtener_conexion()
+                            cursor = conn.cursor()
+                            cursor.execute("DELETE FROM config_condiciones_equipos WHERE id = ?", (ce_target["id"],))
+                            cursor.execute("DELETE FROM correcciones_rangos WHERE entidad_id = ?", (ce_target["id"],))
+                            conn.commit()
+                            conn.close()
+                            st.session_state["item_editar_id"] = None
+                            st.success("🗑️ Equipo de monitoreo eliminado.")
                             st.rerun()
                         st.markdown('</div>', unsafe_allow_html=True)
     # VISTA REGULAR (SELECCIÓN DE LABORATORIO)
