@@ -692,34 +692,13 @@ def generar_pdf_generico(titulo_reporte, df_datos, metadata=None):
 
 
 # ==========================================
-# SECCIÓN: REPORTES EN PDF (SOLO VERIFICADOS)
+# SECCIÓN: REPORTES (PDF)
 # ==========================================
-# (Se actualizan los queries dentro de la sección de reportes para exigir verificado = 1)
-# Ejemplo para Equipos de Uso en la sección REPORTES:
-df_usos = pd.read_sql_query(
-    '''SELECT fecha_hora_cdmx AS "Fecha y Hora", accion AS "Lectura Corregida", usuario AS "Registró", verificado_por AS "Verificó"
-       FROM registros_uso 
-       WHERE equipo_id = ? AND verificado = 1 AND fecha_hora_cdmx BETWEEN ? AND ?''', 
-    conn, 
-    params=(eq['id'], f_inicio_str, f_fin_str)
-)
-
-# Ejemplo para Ambientales en la sección REPORTES:
-df_amb = pd.read_sql_query(
-    '''SELECT fecha_hora AS "Fecha y Hora", ("Temp: " || temp_corr || " °C | Hum: " || hum_corr || " %") AS "Lectura Corregida", usuario AS "Registró", verificado_por AS "Verificó"
-       FROM mediciones_ambientales 
-       WHERE lab = ? AND verificado = 1 AND fecha_hora BETWEEN ? AND ?''', 
-    conn, 
-    params=(lab_act, f_inicio_str, f_fin_str)
-)
-
-# Ejemplo para Condiciones de Equipos en la sección REPORTES:
-df_ce = pd.read_sql_query(
-    '''SELECT fecha_hora AS "Fecha y Hora", corregida AS "Lectura Corregida", usuario AS "Registró", verificado_por AS "Verificó"
-       FROM mediciones_equipos 
-       WHERE lab = ? AND parametro LIKE ? AND verificado = 1 AND fecha_hora BETWEEN ? AND ?''', 
-    conn, 
-    params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%", f_inicio_str, f_fin_str)
+if st.session_state["menu_principal"] == "REPORTES":
+    st.markdown('<div class="section-title">GENERACIÓN DE REPORTES EN PDF</div>', unsafe_allow_html=True)
+    
+    cat_act = st.session_state["sub_categoria"]
+    lab_act = st.session_state["lab_seleccionado"]
 )
     
     if lab_act is None:
