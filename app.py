@@ -997,6 +997,8 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
 
     # MÓDULO ➖ (EDITAR O ELIMINAR)
     elif st.session_state["modo_eliminar"]:
+        
+        # 1. ELIMINAR / EDITAR EQUIPOS
         if st.session_state["sub_categoria"] == "EQUIPOS":
             st.markdown('<div class="section-title">SELECCIONA UN EQUIPO PARA EDITAR O ELIMINAR</div>', unsafe_allow_html=True)
             todos_equipos = cargar_equipos()
@@ -1077,9 +1079,64 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                             st.rerun()
                         st.markdown('</div>', unsafe_allow_html=True)
 
-        else:
-            st.info(f"Selecciona un registro de {st.session_state['sub_categoria']} para dar de baja o actualizar.")
+        # 2. ELIMINAR CONDICIONES AMBIENTALES
+        elif st.session_state["sub_categoria"] == "CONDICIONES AMBIENTALES":
+            st.markdown('<div class="section-title">CONFIGURACIONES AMBIENTALES REGISTRADAS</div>', unsafe_allow_html=True)
+            conn = obtener_conexion()
+            configs_amb = pd.read_sql_query("SELECT * FROM config_ambientales", conn).to_dict(orient="records")
+            conn.close()
 
+            if not configs_amb:
+                st.info("No hay configuraciones ambientales registradas para eliminar.")
+            else:
+                cols_grid = st.columns(4)
+                for idx, ca in enumerate(configs_amb):
+                    with cols_grid[idx % 4]:
+                        lbl_btn = f"{ca['tipo']} - Lab {ca['ubicacion_lab']}"
+                        btn_key = f"btn_del_amb_{ca['id']}"
+                        
+                        st.markdown('<div class="btn-eliminar">', unsafe_allow_html=True)
+                        if st.button(f"🗑️ ELIMINAR\n{lbl_btn}", key=btn_key):
+                            conn = obtener_conexion()
+                            cursor = conn.cursor()
+                            # Eliminar configuración y su tabla de rangos asociada
+                            cursor.execute("DELETE FROM config_ambientales WHERE id = ?", (ca['id'],))
+                            entidad_id = f"AMB_{ca['ubicacion_lab']}_{ca['tipo']}"
+                            cursor.execute("DELETE FROM correcciones_rangos WHERE entidad_id = ?", (entidad_id,))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"🗑️ Configuración ambiental {ca['tipo']} del Lab {ca['ubicacion_lab']} eliminada.")
+                            st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+        # 3. ELIMINAR CONDICIONES DE EQUIPOS
+        elif st.session_state["sub_categoria"] == "CONDICIONES DE EQUIPOS":
+            st.markdown('<div class="section-title">CONFIGURACIONES DE CONDICIONES DE EQUIPOS REGISTRADAS</div>', unsafe_allow_html=True)
+            conn = obtener_conexion()
+            configs_ce = pd.read_sql_query("SELECT * FROM config_condiciones_equipos", conn).to_dict(orient="records")
+            conn.close()
+
+            if not configs_ce:
+                st.info("No hay equipos de condiciones/monitoreo registrados para eliminar.")
+            else:
+                cols_grid = st.columns(4)
+                for idx, ce in enumerate(configs_ce):
+                    with cols_grid[idx % 4]:
+                        lbl_btn = f"{ce['tipo_equipo']}-{ce['numero']} (Lab {ce['ubicacion_lab']})"
+                        btn_key = f"btn_del_ce_{ce['id']}"
+                        
+                        st.markdown('<div class="btn-eliminar">', unsafe_allow_html=True)
+                        if st.button(f"🗑️ ELIMINAR\n{lbl_btn}", key=btn_key):
+                            conn = obtener_conexion()
+                            cursor = conn.cursor()
+                            # Eliminar la configuración del equipo y sus correcciones por rango
+                            cursor.execute("DELETE FROM config_condiciones_equipos WHERE id = ?", (ce['id'],))
+                            cursor.execute("DELETE FROM correcciones_rangos WHERE entidad_id = ?", (ce['id'],))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"🗑️ Equipo de monitoreo {ce['tipo_equipo']}-{ce['numero']} eliminado.")
+                            st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
     # VISTA REGULAR (SELECCIÓN DE LABORATORIO)
     elif st.session_state["lab_seleccionado"] is not None:
         lab_actual = st.session_state["lab_seleccionado"]
