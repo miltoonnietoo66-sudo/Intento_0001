@@ -245,16 +245,12 @@ if "menu_principal" not in st.session_state:
     st.session_state["menu_principal"] = "REGISTRAR"
 if "lab_seleccionado" not in st.session_state:
     st.session_state["lab_seleccionado"] = None
+if "sub_categoria" not in st.session_state:
+    st.session_state["sub_categoria"] = "EQUIPOS"
 if "modo_agregar" not in st.session_state:
     st.session_state["modo_agregar"] = False
 if "modo_eliminar" not in st.session_state:
     st.session_state["modo_eliminar"] = False
-if "sub_seccion_mas" not in st.session_state:
-    st.session_state["sub_seccion_mas"] = "EQUIPOS"
-if "sub_seccion_menos" not in st.session_state:
-    st.session_state["sub_seccion_menos"] = "EQUIPOS"
-if "sub_seccion_lab" not in st.session_state:
-    st.session_state["sub_seccion_lab"] = "USO DE EQUIPOS"
 if "equipo_activo_id" not in st.session_state:
     st.session_state["equipo_activo_id"] = None
 if "item_editar_id" not in st.session_state:
@@ -486,7 +482,6 @@ for idx, lab in enumerate(labs_menu, start=1):
         else:
             etiqueta = lab
 
-        # Resaltar laboratorio si está seleccionado
         if st.session_state["lab_seleccionado"] == lab and not st.session_state["modo_agregar"] and not st.session_state["modo_eliminar"]:
             aplicar_estilo_seleccion(f"btn_f2_{lab}")
 
@@ -500,98 +495,127 @@ for idx, lab in enumerate(labs_menu, start=1):
                 st.session_state["modo_agregar"] = True
                 st.session_state["modo_eliminar"] = False
                 st.session_state["lab_seleccionado"] = None
-                st.session_state["sub_seccion_mas"] = "EQUIPOS"
             elif lab == "MENOS":
                 st.session_state["modo_eliminar"] = True
                 st.session_state["modo_agregar"] = False
                 st.session_state["lab_seleccionado"] = None
-                st.session_state["sub_seccion_menos"] = "EQUIPOS"
                 st.session_state["item_editar_id"] = None
             else:
                 st.session_state["lab_seleccionado"] = lab
                 st.session_state["modo_agregar"] = False
                 st.session_state["modo_eliminar"] = False
-                st.session_state["sub_seccion_lab"] = "USO DE EQUIPOS"
                 st.session_state["equipo_activo_id"] = None
             st.rerun()
+
+# ==========================================
+# FILA 5: TRES BOTONES DE RUBROS (GLOBAL)
+# ==========================================
+col_cat1, col_cat2, col_cat3 = st.columns([1, 1, 1])
+
+with col_cat1:
+    if st.session_state["sub_categoria"] == "EQUIPOS":
+        aplicar_estilo_seleccion("btn_cat_equipos")
+    if st.button("EQUIPOS", key="btn_cat_equipos"):
+        st.session_state["sub_categoria"] = "EQUIPOS"
+        st.session_state["item_editar_id"] = None
+        st.rerun()
+
+with col_cat2:
+    if st.session_state["sub_categoria"] == "CONDICIONES AMBIENTALES":
+        aplicar_estilo_seleccion("btn_cat_amb")
+    if st.button("CONDICIONES AMBIENTALES", key="btn_cat_amb"):
+        st.session_state["sub_categoria"] = "CONDICIONES AMBIENTALES"
+        st.session_state["item_editar_id"] = None
+        st.rerun()
+
+with col_cat3:
+    if st.session_state["sub_categoria"] == "CONDICIONES DE EQUIPOS":
+        aplicar_estilo_seleccion("btn_cat_ce")
+    if st.button("CONDICIONES DE EQUIPOS", key="btn_cat_ce"):
+        st.session_state["sub_categoria"] = "CONDICIONES DE EQUIPOS"
+        st.session_state["item_editar_id"] = None
+        st.rerun()
 
 st.markdown("---")
 
 # ==========================================
-# SECCIÓN: REPORTES (PDF POR LAB SELECCIONADO)
+# SECCIÓN: REPORTES
 # ==========================================
 if st.session_state["menu_principal"] == "REPORTES":
     lab_act = st.session_state["lab_seleccionado"]
+    cat_act = st.session_state["sub_categoria"]
     
     if lab_act is None or st.session_state["modo_agregar"] or st.session_state["modo_eliminar"]:
-        st.info("👈 Por favor, selecciona un laboratorio de la barra superior para ver y descargar sus reportes en PDF.")
+        st.info("👈 Selecciona un laboratorio en la barra superior para descargar reportes en PDF.")
     else:
-        st.markdown(f'<div class="section-title">DESCARGA DE REPORTES PDF - LABORATORIO {lab_act}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="section-title">REPORTES DE {cat_act} - LABORATORIO {lab_act}</div>', unsafe_allow_html=True)
         conn = obtener_conexion()
-        
-        equipos_registrados = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
-        amb_registrados = pd.read_sql_query("SELECT * FROM config_ambientales WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
-        ce_registrados = pd.read_sql_query("SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
-        
-        if not equipos_registrados and not amb_registrados and not ce_registrados:
-            st.warning(f"No hay registros guardados ni reportes disponibles para el Laboratorio {lab_act}.")
-        else:
-            cols_rep = st.columns(4)
-            c_idx = 0
-            
-            # PDF de Equipos de Uso
-            for eq in equipos_registrados:
-                eq_id = eq["id"]
-                nombre_btn = f"PDF: USO {eq['tipo']}-{eq['numero']}"
-                with cols_rep[c_idx % 4]:
-                    df_uso = pd.read_sql_query("SELECT accion as Acción, fecha_hora_cdmx as Fecha_Hora FROM registros_uso WHERE equipo_id = ?", conn, params=(eq_id,))
-                    pdf_bytes = generar_pdf_generico(f"REPORTE DE USO - EQUIPO {eq['tipo']}-{eq['numero']} (LAB {lab_act})", df_uso)
-                    st.download_button(
-                        label=nombre_btn,
-                        data=pdf_bytes,
-                        file_name=f"Reporte_Uso_{eq_id}.pdf",
-                        mime="application/pdf",
-                        key=f"dl_eq_{eq_id}"
-                    )
-                c_idx += 1
-                
-            # PDF de Condiciones Ambientales
-            if amb_registrados:
-                with cols_rep[c_idx % 4]:
+        cols_rep = st.columns(4)
+        c_idx = 0
+
+        if cat_act == "EQUIPOS":
+            equipos_registrados = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
+            if not equipos_registrados:
+                st.warning(f"No hay equipos de uso registrados en el Lab {lab_act}.")
+            else:
+                for eq in equipos_registrados:
+                    eq_id = eq["id"]
+                    nombre_btn = f"📄 PDF: USO {eq['tipo']}-{eq['numero']}"
+                    with cols_rep[c_idx % 4]:
+                        df_uso = pd.read_sql_query("SELECT accion as Acción, fecha_hora_cdmx as Fecha_Hora FROM registros_uso WHERE equipo_id = ?", conn, params=(eq_id,))
+                        pdf_bytes = generar_pdf_generico(f"REPORTE DE USO - EQUIPO {eq['tipo']}-{eq['numero']} (LAB {lab_act})", df_uso)
+                        st.download_button(
+                            label=nombre_btn,
+                            data=pdf_bytes,
+                            file_name=f"Reporte_Uso_{eq_id}.pdf",
+                            mime="application/pdf",
+                            key=f"dl_eq_{eq_id}"
+                        )
+                    c_idx += 1
+
+        elif cat_act == "CONDICIONES AMBIENTALES":
+            amb_registrados = pd.read_sql_query("SELECT * FROM config_ambientales WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
+            if not amb_registrados:
+                st.warning(f"No hay configuraciones ambientales para el Lab {lab_act}.")
+            else:
+                with cols_rep[0]:
                     df_amb = pd.read_sql_query("SELECT fecha_hora as Fecha, temp_corr as Temp_°C, hum_corr as Humedad_% FROM mediciones_ambientales WHERE lab = ?", conn, params=(lab_act,))
                     pdf_bytes_amb = generar_pdf_generico(f"REPORTE DE CONDICIONES AMBIENTALES (LAB {lab_act})", df_amb)
                     st.download_button(
-                        label=f"PDF: COND. AMBIENTALES",
+                        label=f"📄 PDF: CONDICIONES AMBIENTALES",
                         data=pdf_bytes_amb,
                         file_name=f"Reporte_Ambiental_Lab_{lab_act}.pdf",
                         mime="application/pdf",
                         key=f"dl_amb_{lab_act}"
                     )
-                c_idx += 1
 
-            # PDF de Condiciones de Equipos
-            for ce in ce_registrados:
-                ce_id = ce["id"]
-                nombre_ce_btn = f"PDF: TEMP {ce['tipo_equipo']}-{ce['numero']}"
-                with cols_rep[c_idx % 4]:
-                    df_ce = pd.read_sql_query("SELECT fecha_hora as Fecha, parametro as Parámetro, corregida as Lectura_Corregida FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?", conn, params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%"))
-                    pdf_bytes_ce = generar_pdf_generico(f"REPORTE DE TEMPERATURA - {ce['tipo_equipo']}-{ce['numero']} (LAB {lab_act})", df_ce)
-                    st.download_button(
-                        label=nombre_ce_btn,
-                        data=pdf_bytes_ce,
-                        file_name=f"Reporte_Condicion_{ce_id}.pdf",
-                        mime="application/pdf",
-                        key=f"dl_ce_{ce_id}"
-                    )
-                c_idx += 1
-                
+        elif cat_act == "CONDICIONES DE EQUIPOS":
+            ce_registrados = pd.read_sql_query("SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
+            if not ce_registrados:
+                st.warning(f"No hay equipos con monitoreo de condiciones configurados en el Lab {lab_act}.")
+            else:
+                for ce in ce_registrados:
+                    ce_id = ce["id"]
+                    nombre_ce_btn = f"📄 PDF: TEMP {ce['tipo_equipo']}-{ce['numero']}"
+                    with cols_rep[c_idx % 4]:
+                        df_ce = pd.read_sql_query("SELECT fecha_hora as Fecha, parametro as Parámetro, corregida as Lectura_Corregida FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?", conn, params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%"))
+                        pdf_bytes_ce = generar_pdf_generico(f"REPORTE DE TEMPERATURA - {ce['tipo_equipo']}-{ce['numero']} (LAB {lab_act})", df_ce)
+                        st.download_button(
+                            label=nombre_ce_btn,
+                            data=pdf_bytes_ce,
+                            file_name=f"Reporte_Condicion_{ce_id}.pdf",
+                            mime="application/pdf",
+                            key=f"dl_ce_{ce_id}"
+                        )
+                    c_idx += 1
+
         conn.close()
 
 # ==========================================
 # SECCIÓN: VERIFICAR Y USUARIO
 # ==========================================
 elif st.session_state["menu_principal"] == "VERIFICAR":
-    st.info("🔍 Módulo de VERIFICACIÓN: Espacio reservado para auditorías y revisión de bitácoras completas.")
+    st.info(f"🔍 Auditoría y Verificación de Bitácoras ({st.session_state['sub_categoria']}): Módulo activo.")
 
 elif st.session_state["menu_principal"] == "USUARIO":
     st.info("👤 Módulo de USUARIO: Gestión de sesiones, firmas digitales e identificadores del personal.")
@@ -601,22 +625,9 @@ elif st.session_state["menu_principal"] == "USUARIO":
 # ==========================================
 elif st.session_state["menu_principal"] == "REGISTRAR":
     
-    # SUBMÓDULO ➕ (MÁS)
+    # MÓDULO ➕ (AGREGAR ALTA)
     if st.session_state["modo_agregar"]:
-        col_m1, col_m2, col_m3 = st.columns([1, 1, 1])
-        with col_m1:
-            if st.button("EQUIPOS", key="btn_m_equipos"):
-                st.session_state["sub_seccion_mas"] = "EQUIPOS"
-        with col_m2:
-            if st.button("CONDICIONES AMBIENTALES", key="btn_m_ambientales"):
-                st.session_state["sub_seccion_mas"] = "CONDICIONES AMBIENTALES"
-        with col_m3:
-            if st.button("CONDICIONES DE EQUIPOS", key="btn_m_cond_equipos"):
-                st.session_state["sub_seccion_mas"] = "CONDICIONES DE EQUIPOS"
-
-        st.write("")
-
-        if st.session_state["sub_seccion_mas"] == "EQUIPOS":
+        if st.session_state["sub_categoria"] == "EQUIPOS":
             st.markdown('<div class="section-title">REGISTRO DE EQUIPOS DE USO</div>', unsafe_allow_html=True)
             c_tipo, c_num, c_marca, c_mod, c_serie, c_inv = st.columns([1.5, 1, 1.5, 1.5, 1.5, 1.5])
             with c_tipo:
@@ -671,7 +682,7 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                 st.success(f"💾 Guardado: Equipo {st.session_state['sel_tipo_equipo']}-{num_eq} en Lab {st.session_state['sel_ubicacion_lab']}.")
             st.markdown("</div>", unsafe_allow_html=True)
 
-        elif st.session_state["sub_seccion_mas"] == "CONDICIONES AMBIENTALES":
+        elif st.session_state["sub_categoria"] == "CONDICIONES AMBIENTALES":
             st.markdown('<div class="section-title">CONFIGURACIÓN DE CONDICIONES AMBIENTALES</div>', unsafe_allow_html=True)
             ca_tipo, ca_rangos, ca_inst, ca_corr = st.columns([1.2, 1.2, 2, 3.5])
             with ca_tipo:
@@ -727,7 +738,7 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                 st.success("💾 Configuración ambiental guardada correctamente.")
             st.markdown("</div>", unsafe_allow_html=True)
 
-        elif st.session_state["sub_seccion_mas"] == "CONDICIONES DE EQUIPOS":
+        elif st.session_state["sub_categoria"] == "CONDICIONES DE EQUIPOS":
             st.markdown('<div class="section-title">CONFIGURACIÓN DE CONDICIONES DE EQUIPOS</div>', unsafe_allow_html=True)
             ce_tipo, ce_datos, ce_corr = st.columns([1.2, 3.5, 3.5])
             with ce_tipo:
@@ -787,28 +798,9 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                 st.success("💾 Condición de equipo guardada correctamente.")
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # SUBMÓDULO ➖ (MENOS)
+    # MÓDULO ➖ (EDITAR O ELIMINAR)
     elif st.session_state["modo_eliminar"]:
-        col_sub1, col_sub2, col_sub3 = st.columns([1, 1, 1])
-        with col_sub1:
-            if st.button("EQUIPOS", key="btn_sub_eq_menos"):
-                st.session_state["sub_seccion_menos"] = "EQUIPOS"
-                st.session_state["item_editar_id"] = None
-                st.rerun()
-        with col_sub2:
-            if st.button("CONDICIONES AMBIENTALES", key="btn_sub_amb_menos"):
-                st.session_state["sub_seccion_menos"] = "CONDICIONES AMBIENTALES"
-                st.session_state["item_editar_id"] = None
-                st.rerun()
-        with col_sub3:
-            if st.button("CONDICIONES DE EQUIPOS", key="btn_sub_ce_menos"):
-                st.session_state["sub_seccion_menos"] = "CONDICIONES DE EQUIPOS"
-                st.session_state["item_editar_id"] = None
-                st.rerun()
-
-        st.write("")
-
-        if st.session_state["sub_seccion_menos"] == "EQUIPOS":
+        if st.session_state["sub_categoria"] == "EQUIPOS":
             st.markdown('<div class="section-title">SELECCIONA UN EQUIPO PARA EDITAR O ELIMINAR</div>', unsafe_allow_html=True)
             todos_equipos = cargar_equipos()
             if not todos_equipos:
@@ -888,35 +880,14 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                             st.rerun()
                         st.markdown('</div>', unsafe_allow_html=True)
 
-    # VISTA INDIVIDUAL DE LABORATORIOS (REGISTRO DE MEDICIONES / USO)
+        else:
+            st.info(f"Selecciona un registro de {st.session_state['sub_categoria']} para dar de baja o actualizar.")
+
+    # VISTA REGULAR (SELECCIÓN DE LABORATORIO)
     elif st.session_state["lab_seleccionado"] is not None:
         lab_actual = st.session_state["lab_seleccionado"]
 
-        col3_1, col3_2, col3_3 = st.columns([1, 1, 1])
-        with col3_1:
-            if st.session_state["sub_seccion_lab"] == "USO DE EQUIPOS":
-                aplicar_estilo_seleccion("btn_lab_uso")
-            if st.button(f"EQUIPOS (LAB {lab_actual})", key="btn_lab_uso"):
-                st.session_state["sub_seccion_lab"] = "USO DE EQUIPOS"
-                st.rerun()
-
-        with col3_2:
-            if st.session_state["sub_seccion_lab"] == "CONDICIONES AMBIENTALES":
-                aplicar_estilo_seleccion("btn_lab_amb")
-            if st.button(f"COND. AMBIENTALES (LAB {lab_actual})", key="btn_lab_amb"):
-                st.session_state["sub_seccion_lab"] = "CONDICIONES AMBIENTALES"
-                st.rerun()
-
-        with col3_3:
-            if st.session_state["sub_seccion_lab"] == "CONDICIONES DE EQUIPOS":
-                aplicar_estilo_seleccion("btn_lab_ce")
-            if st.button(f"COND. EQUIPOS (LAB {lab_actual})", key="btn_lab_ce"):
-                st.session_state["sub_seccion_lab"] = "CONDICIONES DE EQUIPOS"
-                st.rerun()
-
-        st.write("")
-
-        if st.session_state["sub_seccion_lab"] == "USO DE EQUIPOS":
+        if st.session_state["sub_categoria"] == "EQUIPOS":
             st.markdown(f'<div class="section-title">EQUIPOS DISPONIBLES EN LABORATORIO {lab_actual}</div>', unsafe_allow_html=True)
             equipos_lab = cargar_equipos(lab_actual)
 
@@ -972,7 +943,7 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                             df_usos = pd.DataFrame(reg_filtrados)[["Acción", "FechaHora_CDMX"]]
                             st.dataframe(df_usos, use_container_width=True)
 
-        elif st.session_state["sub_seccion_lab"] == "CONDICIONES AMBIENTALES":
+        elif st.session_state["sub_categoria"] == "CONDICIONES AMBIENTALES":
             st.markdown(f'<div class="section-title">CONDICIONES AMBIENTALES - LAB {lab_actual}</div>', unsafe_allow_html=True)
             cfg_temp = cargar_condicion_ambiental_config(lab_actual, "TEMP")
             cfg_hum = cargar_condicion_ambiental_config(lab_actual, "%H")
@@ -1014,7 +985,7 @@ elif st.session_state["menu_principal"] == "REGISTRAR":
                 st.success("💾 Mediciones ambientales guardadas.")
             st.markdown("</div>", unsafe_allow_html=True)
 
-        elif st.session_state["sub_seccion_lab"] == "CONDICIONES DE EQUIPOS":
+        elif st.session_state["sub_categoria"] == "CONDICIONES DE EQUIPOS":
             st.markdown(f'<div class="section-title">CONDICIONES DE EQUIPOS - LAB {lab_actual}</div>', unsafe_allow_html=True)
             equipos_ce_lab = cargar_condiciones_equipos_db(lab_actual)
 
