@@ -538,80 +538,276 @@ with col_cat3:
 
 st.markdown("---")
 
+import io
+import pandas as pd
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
 # ==========================================
-# SECCIÓN: REPORTES (CORREGIDO)
+# FUNCIÓN GENERADORA DE REPORTES PDF
+# ==========================================
+def generar_pdf_generico(titulo_reporte, df_datos, metadata=None):
+    """
+    Genera un archivo PDF dinámico con la ficha técnica detallada en el encabezado
+    y las columnas: Fecha y Hora | Lectura / Temp | Registró (Usuario) | Verificó.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36
+    )
+    
+    story = []
+    styles = getSampleStyleSheet()
+    
+    # Estilos de texto
+    style_title = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontSize=14,
+        leading=16,
+        alignment=1, # Centrado
+        textColor=colors.HexColor('#0077B6'),
+        spaceAfter=12
+    )
+    
+    style_meta_val = ParagraphStyle(
+        'MetaVal',
+        parent=styles['Normal'],
+        fontSize=9,
+        leading=11
+    )
+
+    style_cell = ParagraphStyle(
+        'CellText',
+        parent=styles['Normal'],
+        fontSize=8,
+        leading=10,
+        alignment=1 # Centrado
+    )
+
+    style_header_cell = ParagraphStyle(
+        'HeaderCellText',
+        parent=styles['Normal'],
+        fontSize=9,
+        leading=11,
+        alignment=1,
+        fontName='Helvetica-Bold',
+        textColor=colors.white
+    )
+
+    # 1. TÍTULO DEL REPORTE
+    story.append(Paragraph(titulo_reporte.upper(), style_title))
+    story.append(Spacer(1, 8))
+
+    # 2. ENCABEZADO CON LA FICHA TÉCNICA (METADATOS DEL BOTÓN +)
+    if metadata and isinstance(metadata, dict):
+        meta_table_data = []
+        keys = list(metadata.keys())
+        
+        # Agrupamos las propiedades en filas de 2 columnas (Clave: Valor | Clave: Valor)
+        for i in range(0, len(keys), 2):
+            k1 = keys[i]
+            v1 = str(metadata[k1])
+            cell_left = Paragraph(f"<b>{k1}:</b> {v1}", style_meta_val)
+            
+            if i + 1 < len(keys):
+                k2 = keys[i+1]
+                v2 = str(metadata[k2])
+                cell_right = Paragraph(f"<b>{k2}:</b> {v2}", style_meta_val)
+            else:
+                cell_right = Paragraph("", style_meta_val)
+                
+            meta_table_data.append([cell_left, cell_right])
+
+        t_meta = Table(meta_table_data, colWidths=[270, 270])
+        t_meta.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F0F8FF')),
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#0077B6')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#BEE3F8')),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(t_meta)
+        story.append(Spacer(1, 15))
+
+    # 3. CONSTRUCCIÓN DE LA TABLA DE MEDICIONES
+    headers = [
+        Paragraph("FECHA Y HORA", style_header_cell),
+        Paragraph("LECTURA / TEMP", style_header_cell),
+        Paragraph("REGISTRÓ", style_header_cell),
+        Paragraph("VERIFICÓ", style_header_cell)
+    ]
+    
+    table_data = [headers]
+
+    # Llenado de filas desde el DataFrame
+    if df_datos is not None and not df_datos.empty:
+        for _, row in df_datos.iterrows():
+            f_hora = str(row.get("Fecha y Hora", row.get("fecha_hora", "")))
+            lectura = str(row.get("Lectura Corregida", row.get("corregida", row.get("temp_corr", ""))))
+            
+            # Columnas preparadas (vacías por el momento)
+            usuario = str(row.get("usuario", "")) 
+            verifico = str(row.get("verifico", ""))
+
+            table_data.append([
+                Paragraph(f_hora, style_cell),
+                Paragraph(lectura, style_cell),
+                Paragraph(usuario, style_cell),
+                Paragraph(verifico, style_cell)
+            ])
+    else:
+        table_data.append([
+            Paragraph("Sin datos", style_cell),
+            Paragraph("Sin datos", style_cell),
+            Paragraph("", style_cell),
+            Paragraph("", style_cell)
+        ])
+
+    t_mediciones = Table(table_data, colWidths=[150, 130, 130, 130])
+    t_mediciones.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0077B6')),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E1')),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')])
+    ]))
+
+    story.append(t_mediciones)
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+# ==========================================
+# SECCIÓN: REPORTES (PDF)
 # ==========================================
 if st.session_state["menu_principal"] == "REPORTES":
-    lab_act = st.session_state["lab_seleccionado"]
-    cat_act = st.session_state["sub_categoria"]
+    st.markdown('<div class="section-title">GENERACIÓN DE REPORTES EN PDF</div>', unsafe_allow_html=True)
     
-    if lab_act is None or st.session_state["modo_agregar"] or st.session_state["modo_eliminar"]:
-        st.info("👈 Selecciona un laboratorio en la barra superior para descargar reportes en PDF.")
+    cat_act = st.session_state["sub_categoria"]
+    lab_act = st.session_state["lab_seleccionado"]
+    
+    if lab_act is None:
+        st.info("👈 Por favor, selecciona un Laboratorio de la barra superior para consultar los reportes.")
     else:
-        st.markdown(f'<div class="section-title">REPORTES DE {cat_act} - LABORATORIO {lab_act}</div>', unsafe_allow_html=True)
         conn = obtener_conexion()
         cols_rep = st.columns(4)
         c_idx = 0
 
+        # --- A. REPORTES DE EQUIPOS DE USO ---
         if cat_act == "EQUIPOS":
-            equipos_registrados = pd.read_sql_query("SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
+            equipos_registrados = pd.read_sql_query(
+                "SELECT * FROM equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)
+            ).to_dict(orient="records")
+            
             if not equipos_registrados:
-                st.warning(f"No hay equipos de uso registrados en el Lab {lab_act}.")
+                st.warning(f"No hay equipos registrados en el Lab {lab_act}.")
             else:
                 for eq in equipos_registrados:
-                    eq_id = eq["id"]
-                    nombre_btn = f"📄 PDF: USO {eq['tipo']}-{eq['numero']}"
+                    meta_eq = {
+                        "Tipo de Equipo": eq['tipo'],
+                        "Número": eq['numero'],
+                        "Marca": eq['marca'],
+                        "Modelo": eq['modelo'],
+                        "Serie": eq['serie'],
+                        "Inventario": eq['inventario'],
+                        "Ubicación": f"Laboratorio {eq['ubicacion_lab']}"
+                    }
+                    
                     with cols_rep[c_idx % 4]:
-                        df_uso = pd.read_sql_query('SELECT accion as "Acción", fecha_hora_cdmx as "Fecha y Hora" FROM registros_uso WHERE equipo_id = ?', conn, params=(eq_id,))
-                        pdf_bytes = generar_pdf_generico(f"REPORTE DE USO - EQUIPO {eq['tipo']}-{eq['numero']} (LAB {lab_act})", df_uso)
+                        df_usos = pd.read_sql_query(
+                            'SELECT fecha_hora_cdmx AS "Fecha y Hora", accion AS "Lectura Corregida" FROM registros_uso WHERE equipo_id = ?', 
+                            conn, 
+                            params=(eq['id'],)
+                        )
+                        
+                        pdf_bytes = generar_pdf_generico(f"BITÁCORA DE USO: {eq['tipo']}-{eq['numero']}", df_usos, metadata=meta_eq)
+                        
                         st.download_button(
-                            label=nombre_btn,
+                            label=f"📄 PDF: {eq['tipo']}-{eq['numero']}",
                             data=pdf_bytes,
-                            file_name=f"Reporte_Uso_{eq_id}.pdf",
+                            file_name=f"Reporte_Uso_{eq['id']}.pdf",
                             mime="application/pdf",
-                            key=f"dl_eq_{eq_id}"
+                            key=f"dl_eq_{eq['id']}"
                         )
                     c_idx += 1
 
+        # --- B. REPORTES DE CONDICIONES AMBIENTALES ---
         elif cat_act == "CONDICIONES AMBIENTALES":
-            amb_registrados = pd.read_sql_query("SELECT * FROM config_ambientales WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
-            if not amb_registrados:
-                st.warning(f"No hay configuraciones ambientales para el Lab {lab_act}.")
-            else:
-                with cols_rep[0]:
-                    # Alias corregidos con comillas dobles
-                    df_amb = pd.read_sql_query('SELECT fecha_hora as "Fecha y Hora", temp_corr as "Temp (°C)", hum_corr as "Humedad (%)" FROM mediciones_ambientales WHERE lab = ?', conn, params=(lab_act,))
-                    pdf_bytes_amb = generar_pdf_generico(f"REPORTE DE CONDICIONES AMBIENTALES (LAB {lab_act})", df_amb)
-                    st.download_button(
-                        label=f"📄 PDF: CONDICIONES AMBIENTALES",
-                        data=pdf_bytes_amb,
-                        file_name=f"Reporte_Ambiental_Lab_{lab_act}.pdf",
-                        mime="application/pdf",
-                        key=f"dl_amb_{lab_act}"
-                    )
+            meta_amb = {
+                "Área Monitorizada": f"Laboratorio {lab_act}",
+                "Parámetros": "Temperatura y Humedad Relativa",
+                "Frecuencia de Registro": "Diaria"
+            }
+            
+            df_amb = pd.read_sql_query(
+                'SELECT fecha_hora AS "Fecha y Hora", ("Temp: " || temp_corr || " °C | Hum: " || hum_corr || " %") AS "Lectura Corregida" FROM mediciones_ambientales WHERE lab = ?', 
+                conn, 
+                params=(lab_act,)
+            )
+            
+            with cols_rep[0]:
+                pdf_bytes_amb = generar_pdf_generico(f"CONDICIONES AMBIENTALES - LAB {lab_act}", df_amb, metadata=meta_amb)
+                st.download_button(
+                    label=f"📄 PDF: AMBIENTAL LAB {lab_act}",
+                    data=pdf_bytes_amb,
+                    file_name=f"Reporte_Ambiental_Lab_{lab_act}.pdf",
+                    mime="application/pdf",
+                    key=f"dl_amb_{lab_act}"
+                )
 
+        # --- C. REPORTES DE CONDICIONES DE EQUIPOS ---
         elif cat_act == "CONDICIONES DE EQUIPOS":
-            ce_registrados = pd.read_sql_query("SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)).to_dict(orient="records")
+            ce_registrados = pd.read_sql_query(
+                "SELECT * FROM config_condiciones_equipos WHERE ubicacion_lab = ?", conn, params=(lab_act,)
+            ).to_dict(orient="records")
+            
             if not ce_registrados:
-                st.warning(f"No hay equipos con monitoreo de condiciones configurados en el Lab {lab_act}.")
+                st.warning(f"No hay equipos de monitoreo configurados en el Lab {lab_act}.")
             else:
                 for ce in ce_registrados:
-                    ce_id = ce["id"]
-                    nombre_ce_btn = f"📄 PDF: TEMP {ce['tipo_equipo']}-{ce['numero']}"
+                    meta_ce = {
+                        "Tipo de Equipo": ce['tipo_equipo'],
+                        "Número": ce['numero'],
+                        "Marca": ce['marca'],
+                        "Modelo": ce['modelo'],
+                        "Serie": ce['serie'],
+                        "Inventario": ce['inventario'],
+                        "Ubicación": f"Laboratorio {ce['ubicacion_lab']}"
+                    }
+                    
                     with cols_rep[c_idx % 4]:
-                        df_ce = pd.read_sql_query('SELECT fecha_hora as "Fecha y Hora", parametro as "Parámetro", corregida as "Lectura Corregida" FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?', conn, params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%"))
-                        pdf_bytes_ce = generar_pdf_generico(f"REPORTE DE TEMPERATURA - {ce['tipo_equipo']}-{ce['numero']} (LAB {lab_act})", df_ce)
+                        df_ce = pd.read_sql_query(
+                            'SELECT fecha_hora AS "Fecha y Hora", corregida AS "Lectura Corregida" FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?', 
+                            conn, 
+                            params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%")
+                        )
+                        
+                        pdf_bytes_ce = generar_pdf_generico(f"MONITOREO DE TEMPERATURA: {ce['tipo_equipo']}-{ce['numero']}", df_ce, metadata=meta_ce)
+                        
                         st.download_button(
-                            label=nombre_ce_btn,
+                            label=f"📄 PDF: {ce['tipo_equipo']}-{ce['numero']}",
                             data=pdf_bytes_ce,
-                            file_name=f"Reporte_Condicion_{ce_id}.pdf",
+                            file_name=f"Reporte_Condicion_{ce['id']}.pdf",
                             mime="application/pdf",
-                            key=f"dl_ce_{ce_id}"
+                            key=f"dl_ce_{ce['id']}"
                         )
                     c_idx += 1
 
-        conn.close()
-    
+        conn.close()    
 # ==========================================
 # SECCIÓN: VERIFICAR Y USUARIO
 # ==========================================
