@@ -539,7 +539,7 @@ with col_cat3:
 st.markdown("---")
 
 # ==========================================
-# SECCIÓN: REPORTES
+# SECCIÓN: REPORTES (CORREGIDO)
 # ==========================================
 if st.session_state["menu_principal"] == "REPORTES":
     lab_act = st.session_state["lab_seleccionado"]
@@ -562,7 +562,7 @@ if st.session_state["menu_principal"] == "REPORTES":
                     eq_id = eq["id"]
                     nombre_btn = f"📄 PDF: USO {eq['tipo']}-{eq['numero']}"
                     with cols_rep[c_idx % 4]:
-                        df_uso = pd.read_sql_query("SELECT accion as Acción, fecha_hora_cdmx as Fecha_Hora FROM registros_uso WHERE equipo_id = ?", conn, params=(eq_id,))
+                        df_uso = pd.read_sql_query('SELECT accion as "Acción", fecha_hora_cdmx as "Fecha y Hora" FROM registros_uso WHERE equipo_id = ?', conn, params=(eq_id,))
                         pdf_bytes = generar_pdf_generico(f"REPORTE DE USO - EQUIPO {eq['tipo']}-{eq['numero']} (LAB {lab_act})", df_uso)
                         st.download_button(
                             label=nombre_btn,
@@ -579,7 +579,8 @@ if st.session_state["menu_principal"] == "REPORTES":
                 st.warning(f"No hay configuraciones ambientales para el Lab {lab_act}.")
             else:
                 with cols_rep[0]:
-                    df_amb = pd.read_sql_query("SELECT fecha_hora as Fecha, temp_corr as Temp_°C, hum_corr as Humedad_% FROM mediciones_ambientales WHERE lab = ?", conn, params=(lab_act,))
+                    # Alias corregidos con comillas dobles
+                    df_amb = pd.read_sql_query('SELECT fecha_hora as "Fecha y Hora", temp_corr as "Temp (°C)", hum_corr as "Humedad (%)" FROM mediciones_ambientales WHERE lab = ?', conn, params=(lab_act,))
                     pdf_bytes_amb = generar_pdf_generico(f"REPORTE DE CONDICIONES AMBIENTALES (LAB {lab_act})", df_amb)
                     st.download_button(
                         label=f"📄 PDF: CONDICIONES AMBIENTALES",
@@ -598,7 +599,7 @@ if st.session_state["menu_principal"] == "REPORTES":
                     ce_id = ce["id"]
                     nombre_ce_btn = f"📄 PDF: TEMP {ce['tipo_equipo']}-{ce['numero']}"
                     with cols_rep[c_idx % 4]:
-                        df_ce = pd.read_sql_query("SELECT fecha_hora as Fecha, parametro as Parámetro, corregida as Lectura_Corregida FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?", conn, params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%"))
+                        df_ce = pd.read_sql_query('SELECT fecha_hora as "Fecha y Hora", parametro as "Parámetro", corregida as "Lectura Corregida" FROM mediciones_equipos WHERE lab = ? AND parametro LIKE ?', conn, params=(lab_act, f"%{ce['tipo_equipo']}-{ce['numero']}%"))
                         pdf_bytes_ce = generar_pdf_generico(f"REPORTE DE TEMPERATURA - {ce['tipo_equipo']}-{ce['numero']} (LAB {lab_act})", df_ce)
                         st.download_button(
                             label=nombre_ce_btn,
@@ -610,7 +611,6 @@ if st.session_state["menu_principal"] == "REPORTES":
                     c_idx += 1
 
         conn.close()
-
 # ==========================================
 # SECCIÓN: VERIFICAR Y USUARIO
 # ==========================================
