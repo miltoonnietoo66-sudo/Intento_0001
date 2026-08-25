@@ -11,7 +11,9 @@ import streamlit as st
 
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
-    page_title="Sistema INER - Gestión de Laboratorios", layout="wide"
+    page_title="Sistema INER - Gestión de Laboratorios", 
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 TZ_CDMX = ZoneInfo("America/Mexico_City")
@@ -27,7 +29,6 @@ def inicializar_bd():
     conn = obtener_conexion()
     cursor = conn.cursor()
     
-    # Tabla de Equipos de Uso
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS equipos (
             id TEXT PRIMARY KEY,
@@ -42,7 +43,6 @@ def inicializar_bd():
         )
     """)
     
-    # Tabla de Registros de Uso de Equipos (Bitácora)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS registros_uso (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,7 +52,6 @@ def inicializar_bd():
         )
     """)
     
-    # Tabla de Configuración de Condiciones Ambientales
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS config_ambientales (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +64,6 @@ def inicializar_bd():
         )
     """)
 
-    # Tabla de Configuración de Condiciones de Equipos
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS config_condiciones_equipos (
             id TEXT PRIMARY KEY,
@@ -80,7 +78,6 @@ def inicializar_bd():
         )
     """)
 
-    # Tabla de Correcciones (Guarda rangos y factores de corrección)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS correcciones_rangos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,7 +87,6 @@ def inicializar_bd():
         )
     """)
 
-    # Tabla Histórica de Mediciones Ambientales
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS mediciones_ambientales (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,7 +99,6 @@ def inicializar_bd():
         )
     """)
 
-    # Tabla Histórica de Mediciones de Condiciones de Equipos
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS mediciones_equipos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,20 +113,20 @@ def inicializar_bd():
     conn.commit()
     conn.close()
 
-# Inicializamos la estructura de la base de datos
 inicializar_bd()
 
-# 3. CSS PERSONALIZADO (Estilos e interfaz visual)
+# 3. CSS RESPONSIVO (Adaptable a PC, Tablet y Celular)
 st.markdown(
     """
     <style>
+    /* Fondo responsivo con marca de agua */
     .stApp {
         background-color: #FFFFFF;
         background-image: url('https://www.gob.mx/cms/uploads/action_program/main_image/26915/iner.jpg');
         background-repeat: no-repeat;
         background-attachment: fixed;
         background-position: center;
-        background-size: 420px;
+        background-size: min(80vw, 420px);
     }
 
     .stApp::before {
@@ -141,15 +136,20 @@ st.markdown(
         left: 0;
         width: 100%;
         height: 100%;
-        background-color: rgba(255, 255, 255, 0.90);
+        background-color: rgba(255, 255, 255, 0.92);
         z-index: -1;
     }
 
+    /* Ajuste de márgenes responsivos */
     .block-container {
-        padding-top: 2rem !important;
+        padding-top: 1rem !important;
         padding-bottom: 2rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        max-width: 100% !important;
     }
 
+    /* Estilos de cajas adaptables */
     .label-box {
         border: 2px solid #0077B6;
         background-color: #FFFFFF;
@@ -157,12 +157,13 @@ st.markdown(
         font-weight: bold;
         text-align: center;
         padding: 0.4rem;
-        border-radius: 4px;
-        height: 2.8rem;
+        border-radius: 6px;
+        min-height: 2.8rem;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1rem;
+        font-size: clamp(0.85rem, 2vw, 1rem);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
 
     .reloj-box {
@@ -172,33 +173,42 @@ st.markdown(
         font-weight: bold;
         text-align: center;
         padding: 0.4rem;
-        border-radius: 4px;
-        height: 2.8rem;
+        border-radius: 6px;
+        min-height: 2.8rem;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 0.95rem;
+        font-size: clamp(0.8rem, 1.8vw, 0.95rem);
     }
 
+    /* Estilo de Botones Adaptables */
     div[data-testid="stButton"] > button {
         color: #E63946 !important;
         font-weight: bold !important;
         background-color: #FFFFFF !important;
         border: 2px solid #0077B6 !important;
-        border-radius: 4px !important;
+        border-radius: 6px !important;
         width: 100% !important;
-        height: 2.8rem !important;
+        min-height: 2.8rem !important;
+        font-size: clamp(0.8rem, 1.8vw, 1rem) !important;
+        padding: 0.2rem 0.5rem !important;
+        transition: all 0.2s ease-in-out;
     }
 
     div[data-testid="stButton"] > button:hover {
         background-color: #F0F8FF !important;
+        border-color: #023E8A !important;
     }
 
     .btn-hecho div[data-testid="stButton"] > button {
         background-color: #2A9D8F !important;
         color: #FFFFFF !important;
         border: 2px solid #2A9D8F !important;
-        font-size: 1.1rem !important;
+        font-size: clamp(0.95rem, 2vw, 1.15rem) !important;
+    }
+
+    .btn-hecho div[data-testid="stButton"] > button:hover {
+        background-color: #218377 !important;
     }
 
     .section-title {
@@ -208,6 +218,7 @@ st.markdown(
         border-bottom: 2px solid #0077B6;
         padding-bottom: 5px;
         margin-bottom: 15px;
+        font-size: clamp(1.1rem, 2.5vw, 1.4rem);
     }
 
     .oval-corregido {
@@ -220,15 +231,27 @@ st.markdown(
         border-radius: 20px;
         margin-top: 5px;
         margin-bottom: 15px;
-        font-size: 0.95rem;
-        box-shadow: 1px 1px 4px rgba(0,0,0,0.1);
+        font-size: clamp(0.85rem, 1.8vw, 0.95rem);
+        box-shadow: 1px 1px 4px rgba(0,0,0,0.08);
+    }
+
+    /* Ajustes específicos para móviles */
+    @media (max-width: 640px) {
+        .block-container {
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+        
+        div[data-testid="stHorizontalBlock"] {
+            gap: 0.3rem !important;
+        }
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# 4. INICIALIZACIÓN DE ESTADOS DE NAVEGACIÓN
+# 4. INICIALIZACIÓN DE ESTADOS
 if "lab_seleccionado" not in st.session_state:
     st.session_state["lab_seleccionado"] = None
 
@@ -250,7 +273,6 @@ if "pdf_amb_listo" not in st.session_state:
 if "pdf_ce_listo" not in st.session_state:
     st.session_state["pdf_ce_listo"] = None
 
-# Formularios menú MAS
 if "sel_tipo_equipo" not in st.session_state:
     st.session_state["sel_tipo_equipo"] = "GABS"
 
@@ -315,7 +337,6 @@ def calcular_correccion_valor(valor_leido, tabla_correcciones, columna_rango="Ra
 
     return round(valor_leido, 2), 0.0
 
-# --- LECTURAS DESDE SQLITE ---
 def cargar_equipos(lab=None):
     conn = obtener_conexion()
     if lab:
@@ -324,7 +345,6 @@ def cargar_equipos(lab=None):
         df = pd.read_sql_query("SELECT * FROM equipos", conn)
     conn.close()
     
-    # Adaptar columnas al formato de diccionario esperado
     res = []
     for _, r in df.iterrows():
         res.append({
@@ -392,12 +412,10 @@ def cargar_registros_uso(equipo_id):
     conn.close()
     return df.to_dict(orient="records")
 
-# 6. GENERADORES DE REPORTES PDF EN REPORTLAB
+# 6. GENERADORES DE REPORTES PDF
 def generar_pdf_condiciones_ambientales(lab, reg_config, temp_leida, temp_corr, hum_leida, hum_corr):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
-    )
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     elements = []
     styles = getSampleStyleSheet()
 
@@ -570,11 +588,10 @@ def generar_pdf_equipo(equipo_info, registros_equipo):
     buffer.seek(0)
     return buffer
 
-
 # ==========================================
-# FILA 1: INER | BUSCAR | RELOJ (CDMX) | LIT
+# FILA 1: ENCABEZADO Y BUSCADOR RESPONSIVO
 # ==========================================
-col1_1, col1_2, col1_3, col1_4 = st.columns([1.5, 1.5, 3.5, 1.5])
+col1_1, col1_2, col1_3, col1_4 = st.columns([1.2, 1.2, 3, 1.2])
 
 with col1_1:
     st.markdown('<div class="label-box">INER</div>', unsafe_allow_html=True)
@@ -595,13 +612,13 @@ with col1_4:
 st.write("")
 
 # ==========================================
-# FILA 2: LABORATORIOS | 502 | ... | 🏠 | ➕
+# FILA 2: BARRA DE LABORATORIOS RESPONSIVA
 # ==========================================
 labs_menu = labs_lista + ["INICIO", "MAS"]
 cols_f2 = st.columns([2] + [1] * (len(labs_menu)))
 
 with cols_f2[0]:
-    st.markdown('<div class="label-box">LABORATORIOS</div>', unsafe_allow_html=True)
+    st.markdown('<div class="label-box">LABS</div>', unsafe_allow_html=True)
 
 for idx, lab in enumerate(labs_menu, start=1):
     with cols_f2[idx]:
@@ -697,7 +714,6 @@ if st.session_state["modo_agregar"]:
         if st.button("HECHO", key="btn_hecho_equipos"):
             id_unico = f"{st.session_state['sel_tipo_equipo']}-{num_eq}_{st.session_state['sel_ubicacion_lab']}"
             
-            # INSERCIÓN EN BASE DE DATOS SQLITE
             conn = obtener_conexion()
             cursor = conn.cursor()
             cursor.execute("""
@@ -874,14 +890,14 @@ elif st.session_state["lab_seleccionado"] is not None:
     with col3_2:
         if st.session_state["sub_seccion_lab"] == "CONDICIONES AMBIENTALES":
             aplicar_estilo_seleccion("btn_lab_amb")
-        if st.button(f"CONDICIONES AMBIENTALES (LAB {lab_actual})", key="btn_lab_amb"):
+        if st.button(f"COND. AMBIENTALES (LAB {lab_actual})", key="btn_lab_amb"):
             st.session_state["sub_seccion_lab"] = "CONDICIONES AMBIENTALES"
             st.rerun()
 
     with col3_3:
         if st.session_state["sub_seccion_lab"] == "CONDICIONES DE EQUIPOS":
             aplicar_estilo_seleccion("btn_lab_ce")
-        if st.button(f"CONDICIONES DE EQUIPOS (LAB {lab_actual})", key="btn_lab_ce"):
+        if st.button(f"COND. EQUIPOS (LAB {lab_actual})", key="btn_lab_ce"):
             st.session_state["sub_seccion_lab"] = "CONDICIONES DE EQUIPOS"
             st.rerun()
 
@@ -1044,7 +1060,7 @@ elif st.session_state["lab_seleccionado"] is not None:
 
                 with col_curr:
                     titulo_eq = f"{eq_ce['Tipo_Equipo']}-{eq_ce['Numero']}"
-                    st.markdown(f"<div style='border: 1px solid #0077B6; border-radius: 4px; padding: 4px; text-align: center; font-weight: bold; background-color: #F0F8FF; color: #0077B6; margin-bottom: 5px;'>{titulo_eq}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='border: 1px solid #0077B6; border-radius: 4px; padding: 4px; text-align: center; font-weight: bold; background-color: #F0F8FF; color: #0077B6; margin-bottom: 5px; font-size: 0.9rem;'>{titulo_eq}</div>", unsafe_allow_html=True)
 
                     val_leido = st.number_input(f"Lectura Temp", key=f"ce_val_{eq_ce['id_ce']}", value=None, step=0.1)
 
