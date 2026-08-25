@@ -107,7 +107,7 @@ def inicializar_bd():
 
 inicializar_bd()
 
-# 3. CSS RESPONSIVO Y ESTILOS DE BOTONES
+# 3. CSS RESPONSIVO Y ESTILOS DE BANNER AZUL
 st.markdown(
     """
     <style>
@@ -127,12 +127,33 @@ st.markdown(
         z-index: -1;
     }
     .block-container {
-        padding-top: 1rem !important;
+        padding-top: 0.5rem !important;
         padding-bottom: 2rem !important;
         padding-left: 1rem !important;
         padding-right: 1rem !important;
         max-width: 100% !important;
     }
+    
+    /* FILA 1: MARCO SUPERIOR */
+    .marco-superior {
+        height: 15px;
+        width: 100%;
+    }
+
+    /* FILA 2: BANNER AZUL CON TÍTULO */
+    .banner-azul {
+        background-color: #0077B6;
+        color: #FFFFFF;
+        font-weight: bold;
+        text-align: center;
+        padding: 0.6rem 1rem;
+        border-radius: 6px;
+        font-size: clamp(1rem, 2.2vw, 1.4rem);
+        letter-spacing: 1px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    }
+
     .label-box {
         border: 2px solid #0077B6;
         background-color: #FFFFFF;
@@ -221,7 +242,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 4. INICILIZACIÓN DE VARIABLES DE ESTADO
+# 4. INICIALIZACIÓN DE VARIABLES DE ESTADO
 if "lab_seleccionado" not in st.session_state:
     st.session_state["lab_seleccionado"] = None
 if "modo_agregar" not in st.session_state:
@@ -236,15 +257,8 @@ if "sub_seccion_lab" not in st.session_state:
     st.session_state["sub_seccion_lab"] = "USO DE EQUIPOS"
 if "equipo_activo_id" not in st.session_state:
     st.session_state["equipo_activo_id"] = None
-
-# Selección de edición/eliminación
 if "item_editar_id" not in st.session_state:
     st.session_state["item_editar_id"] = None
-
-if "pdf_amb_listo" not in st.session_state:
-    st.session_state["pdf_amb_listo"] = None
-if "pdf_ce_listo" not in st.session_state:
-    st.session_state["pdf_ce_listo"] = None
 
 if "sel_tipo_equipo" not in st.session_state:
     st.session_state["sel_tipo_equipo"] = "GABS"
@@ -257,7 +271,7 @@ if "sel_tipo_ce" not in st.session_state:
 
 labs_lista = ["502", "503", "504", "506", "507", "508", "510", "513", "514"]
 
-# 5. FUNCIONES AUXILIARES Y CONSULTAS SQL
+# 5. FUNCIONES AUXILIARES
 def obtener_hora_cdmx():
     return datetime.now(TZ_CDMX).strftime("%d/%m/%Y %H:%M:%S")
 
@@ -327,7 +341,6 @@ def calcular_correccion_valor(valor_leido, tabla_correcciones, columna_rango="Ra
 
     return round(valor_leido, 2), 0.0
 
-# Generación de reportes PDF simplificada para la interfaz
 def cargar_registros_uso(equipo_id):
     conn = obtener_conexion()
     df = pd.read_sql_query("SELECT accion as Acción, fecha_hora_cdmx as FechaHora_CDMX FROM registros_uso WHERE equipo_id = ? ORDER BY id ASC", conn, params=(equipo_id,))
@@ -377,7 +390,17 @@ def cargar_condiciones_equipos_db(lab):
     return res
 
 # ==========================================
-# FILA 1: ENCABEZADO Y BUSCADOR
+# FILA 1: MARCO SUPERIOR (ESPACIO DE MARCO)
+# ==========================================
+st.markdown('<div class="marco-superior"></div>', unsafe_allow_html=True)
+
+# ==========================================
+# FILA 2: BANNER AZUL INSTITUCIONAL
+# ==========================================
+st.markdown('<div class="banner-azul">LABORATORIO DE INMUNOBIOLOGÍA DE LA TUBERCULOSIS</div>', unsafe_allow_html=True)
+
+# ==========================================
+# FILA 3: ENCABEZADO Y BUSCADOR
 # ==========================================
 col1_1, col1_2, col1_3, col1_4 = st.columns([1.2, 1.2, 3, 1.2])
 
@@ -397,7 +420,7 @@ with col1_4:
 st.write("")
 
 # ==========================================
-# FILA 2: BARRA DE NAVEGACIÓN (LABS + INICIO + MÁS + MENOS)
+# FILA 4: BARRA DE NAVEGACIÓN (LABS + INICIO + MÁS + MENOS)
 # ==========================================
 labs_menu = labs_lista + ["INICIO", "MAS", "MENOS"]
 cols_f2 = st.columns([2] + [1] * (len(labs_menu)))
@@ -462,7 +485,6 @@ if st.session_state["modo_agregar"]:
 
     st.write("")
 
-    # ALTA DE EQUIPOS DE USO
     if st.session_state["sub_seccion_mas"] == "EQUIPOS":
         st.markdown('<div class="section-title">REGISTRO DE EQUIPOS DE USO</div>', unsafe_allow_html=True)
         c_tipo, c_num, c_marca, c_mod, c_serie, c_inv = st.columns([1.5, 1, 1.5, 1.5, 1.5, 1.5])
@@ -524,7 +546,6 @@ if st.session_state["modo_agregar"]:
             st.success(f"💾 Guardado: Equipo {st.session_state['sel_tipo_equipo']}-{num_eq} en Lab {st.session_state['sel_ubicacion_lab']}.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ALTA DE CONDICIONES AMBIENTALES
     elif st.session_state["sub_seccion_mas"] == "CONDICIONES AMBIENTALES":
         st.markdown('<div class="section-title">CONFIGURACIÓN DE CONDICIONES AMBIENTALES</div>', unsafe_allow_html=True)
         ca_tipo, ca_rangos, ca_inst, ca_corr = st.columns([1.2, 1.2, 2, 3.5])
@@ -585,7 +606,6 @@ if st.session_state["modo_agregar"]:
             st.success("💾 Configuración ambiental guardada correctamente.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ALTA DE CONDICIONES DE EQUIPOS
     elif st.session_state["sub_seccion_mas"] == "CONDICIONES DE EQUIPOS":
         st.markdown('<div class="section-title">CONFIGURACIÓN DE CONDICIONES DE EQUIPOS</div>', unsafe_allow_html=True)
         ce_tipo, ce_datos, ce_corr = st.columns([1.2, 3.5, 3.5])
@@ -675,7 +695,6 @@ elif st.session_state["modo_eliminar"]:
 
     st.write("")
 
-    # SUBSECCIÓN 1: EQUIPOS REGISTRADOS
     if st.session_state["sub_seccion_menos"] == "EQUIPOS":
         st.markdown('<div class="section-title">SELECCIONA UN EQUIPO PARA EDITAR O ELIMINAR</div>', unsafe_allow_html=True)
         todos_equipos = cargar_equipos()
@@ -694,7 +713,6 @@ elif st.session_state["modo_eliminar"]:
                         st.session_state["item_editar_id"] = eq["id"]
                         st.rerun()
 
-        # FORMULARIO PRECARGADO DE EDICIÓN
         if st.session_state["item_editar_id"]:
             eq_target = next((e for e in todos_equipos if e["id"] == st.session_state["item_editar_id"]), None)
             if eq_target:
@@ -759,7 +777,6 @@ elif st.session_state["modo_eliminar"]:
                         st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
 
-    # SUBSECCIÓN 2: CONDICIONES AMBIENTALES
     elif st.session_state["sub_seccion_menos"] == "CONDICIONES AMBIENTALES":
         st.markdown('<div class="section-title">SELECCIONA UNA CONFIGURACIÓN AMBIENTAL PARA EDITAR O ELIMINAR</div>', unsafe_allow_html=True)
         todas_amb = cargar_todas_config_ambientales()
@@ -841,7 +858,6 @@ elif st.session_state["modo_eliminar"]:
                         st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
 
-    # SUBSECCIÓN 3: CONDICIONES DE EQUIPOS
     elif st.session_state["sub_seccion_menos"] == "CONDICIONES DE EQUIPOS":
         st.markdown('<div class="section-title">SELECCIONA UN EQUIPO DE TEMPERATURA PARA EDITAR O ELIMINAR</div>', unsafe_allow_html=True)
         todas_ce = cargar_todas_config_condiciones_equipos()
